@@ -79,6 +79,47 @@ where
         t
     }
 
+    pub fn solve_tridiagonal(&self, d: &Self) -> Self {
+        self.assert_square();
+
+        assert_eq!(d.column_count(), 1);
+        let n = d.len();
+        let mut a = vec![T::zero(); n];
+        let mut b = vec![T::zero(); n];
+        let mut c = vec![T::zero(); n];
+
+        for i in 0..n {
+            b[i] = self[i][i];
+            if i > 0 {
+                a[i] = self[i][i - 1];
+            }
+            if i < n - 1 {
+                c[i] = self[i][i + 1];
+            }
+        }
+
+        let mut p = vec![T::zero(); n];
+        let mut q = vec![T::zero(); n];
+        let mut x = Matrix::new(vec![vec![T::zero(); n]]).transposed();
+
+        p[0] = -c[0] / b[0];
+        q[0] = d[0][0] / b[0];
+
+        for i in 1..(n - 1) {
+            let denom = b[i] + a[i] * p[i - 1];
+            p[i] = -c[i] / denom;
+            q[i] = (d[i][0] - a[i] * q[i - 1]) / denom;
+        }
+
+        x[n - 1][0] = (d[n - 1][0] - a[n - 1] * q[n - 2]) / (b[n - 1] + a[n - 1] * p[n - 2]);
+
+        for i in (0..n - 1).rev() {
+            x[i][0] = p[i] * x[i + 1][0] + q[i];
+        }
+
+        x
+    }
+
     pub fn solve_lu(&self, b: &Self) -> Self {
         self.assert_square();
         assert_eq!(b.column_count(), 1);

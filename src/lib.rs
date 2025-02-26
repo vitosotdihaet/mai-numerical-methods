@@ -26,7 +26,7 @@ mod labs {
     ///
     /// Lz = b
     #[test]
-    fn lab1() {
+    fn lab_1_1() {
         let a = Matrix::new(vec![
             vec![-7., 3., -4., 7.],
             vec![8., -1., -7., 6.],
@@ -34,7 +34,7 @@ mod labs {
             vec![-7., -9., -8., -5.],
         ]);
 
-        let b = Matrix::new(vec![vec![-126.], vec![29.], vec![27.], vec![34.]]);
+        let b = Matrix::new(vec![vec![-126., 29., 27., 34.]]).transposed();
 
         let (l, u) = a.get_lu();
 
@@ -80,5 +80,22 @@ mod labs {
 
         let determinant = a.determinant();
         assert!((determinant - 16500. as f64).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lab_1_2() {
+        let a = Matrix::new(vec![
+            vec![-7., -6., 0., 0., 0.],
+            vec![6., 12., 0., 0., 0.],
+            vec![0., -3., 5., 0., 0.],
+            vec![0., 0., -9., 21., 8.],
+            vec![0., 0., 0., -5., -6.],
+        ]);
+
+        let d = Matrix::new(vec![vec![-75., 126., 13., -40., -24.]]).transposed();
+
+        // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,-6,0,0,0,-75%7D,%7B6,12,0,0,0,126%7D,%7B0,-3,5,0,0,13%7D,%7B0,0,-9,21,8,-40%7D,%7B0,0,0,-5,-6,-24%7D%7D%29
+        let x = a.solve_tridiagonal(&d);
+        assert_eq!(x, Matrix::new(vec![vec![3., 9., 8., 0., 4.]]));
     }
 }
