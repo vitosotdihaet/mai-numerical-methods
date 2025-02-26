@@ -6,7 +6,7 @@ mod tests {
 
     #[test]
     fn identity_matrix() {
-        let m = Matrix::identity_matrix(3);
+        let m = Matrix::identity(3);
         assert_eq!(
             m,
             Matrix::new(vec![vec![1., 0., 0.], vec![0., 1., 0.], vec![0., 0., 1.],])
@@ -59,13 +59,26 @@ mod labs {
             ])
         );
 
-        let z = Matrix::get_z(&l, &b);
-        let x = Matrix::get_x(&u, &z);
-
         // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,3,-4,7,-126%7D,%7B8,-1,-7,6,29%7D,%7B9,9,3,-6,27%7D,%7B-7,-9,-8,-5,34%7D%7D%29
+        let x = a.solve_lu(&b);
         assert_eq!(
             x,
             Matrix::new(vec![vec![8.], vec![-9.], vec![2.], vec![-5.]])
         );
+
+        // https://math.semestr.ru/matrix/index.php
+        let inversed = a.inversed();
+        assert_eq!(
+            inversed,
+            Matrix::new(vec![
+                vec![-3. / 55., 3. / 55., 1. / 165., -1. / 55.],
+                vec![43. / 500., -2. / 125., 31. / 375., 1. / 500.],
+                vec![-329. / 5500., -69. / 1375., -81. / 1375., -403. / 5500.],
+                vec![19. / 1100., 9. / 275., -52. / 825., -67. / 1100.],
+            ])
+        );
+
+        let determinant = a.determinant();
+        assert!((determinant - 16500. as f64).abs() < 1e-9);
     }
 }

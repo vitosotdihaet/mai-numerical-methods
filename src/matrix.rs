@@ -7,7 +7,7 @@ use std::{
 use num::Float;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Matrix<T> {
+pub struct Matrix<T> {
     values: Vec<Vec<T>>,
 }
 
@@ -29,26 +29,90 @@ where
         Self { values }
     }
 
-    // pub fn decompose_lower(&self, b: Self) -> Self {
-    //     let mut z = Matrix::zero_matrix(self.row_count(), 1);
+    pub fn inversed(&self) -> Self {
+        self.assert_square();
 
-    //     z[0][0] = b[0][0];
-    //     for i in self.row_count() {
-    //         z[i][0] = b[i][0] -
-    //     }
+        let n = self.row_count();
 
-    //     z
-    // }
+        let e = Matrix::identity(n);
+
+        let (l, u) = self.get_lu();
+
+        let mut inversed_rows = Vec::with_capacity(n);
+
+        for current_e in e.iter() {
+            let r =
+                Matrix::solve_lu_with(&l, &u, &Matrix::new(vec![current_e.clone()]).transposed());
+            let t = r.transposed();
+            inversed_rows.push(t.values.into_iter().next().unwrap());
+        }
+
+        Matrix::new(inversed_rows).transposed()
+    }
+
+    pub fn determinant(&self) -> T {
+        self.assert_square();
+        let n = self.row_count();
+
+        let (_, u) = self.get_lu();
+        let mut d = T::one();
+
+        for i in 0..n {
+            d = d * u[i][i];
+        }
+
+        d
+    }
+
+    pub fn transposed(&self) -> Self {
+        let c = self.column_count();
+        let r = self.row_count();
+
+        let mut t = Matrix::zero_matrix(self.column_count(), self.row_count());
+
+        for i in 0..c {
+            for j in 0..r {
+                t[i][j] = self[j][i];
+            }
+        }
+
+        t
+    }
+
+    pub fn solve_lu(&self, b: &Self) -> Self {
+        self.assert_square();
+        assert_eq!(b.column_count(), 1);
+
+        let (l, u) = self.get_lu();
+
+        Matrix::solve_lu_with(&l, &u, &b)
+    }
+
+    pub fn solve_lu_with(l: &Self, u: &Self, b: &Self) -> Self {
+        l.assert_square();
+        u.assert_square();
+
+        assert_eq!(b.column_count(), 1);
+
+        let z = Matrix::get_z(&l, &b);
+        let x = Matrix::get_x(&u, &z);
+
+        x
+    }
 
     /// # Panics
     /// Matrix is not square
-    pub fn get_lu(&self) -> (Self, Self) {
+    fn assert_square(&self) {
         assert_eq!(self.row_count(), self.column_count());
+    }
+
+    pub(crate) fn get_lu(&self) -> (Self, Self) {
+        self.assert_square();
 
         let n = self.row_count();
 
         let mut u = self.clone();
-        let mut l = Matrix::identity_matrix(self.row_count());
+        let mut l = Matrix::identity(self.row_count());
 
         // let mut swaps = Vec::with_capacity(self.row_count());
 
@@ -81,7 +145,7 @@ where
     }
 
     /// Get z from Lz = b
-    pub fn get_z(l: &Self, b: &Self) -> Self {
+    fn get_z(l: &Self, b: &Self) -> Self {
         assert_eq!(b.column_count(), 1);
         assert_eq!(l.row_count(), l.column_count());
 
@@ -102,7 +166,7 @@ where
     }
 
     /// Get x from Ux = z
-    pub fn get_x(u: &Self, z: &Self) -> Self {
+    fn get_x(u: &Self, z: &Self) -> Self {
         assert_eq!(z.column_count(), 1);
         assert_eq!(u.row_count(), u.column_count());
 
@@ -139,7 +203,7 @@ where
         }
     }
 
-    pub fn identity_matrix(n: usize) -> Self {
+    pub fn identity(n: usize) -> Self {
         Self {
             values: (0..n)
                 .map(|i| {
@@ -151,7 +215,7 @@ where
         }
     }
 
-    /// Return a zero matrix with the same dimensions as the input one
+    /// Returns a zero matrix with the same dimensions as the input one
     pub fn like(other: &Self) -> Self {
         Matrix::zero_matrix(other.row_count(), other.column_count())
     }
