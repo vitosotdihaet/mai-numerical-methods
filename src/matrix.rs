@@ -98,9 +98,10 @@ where
 
     pub fn solve_tridiagonal(&self, d: &Self) -> Self {
         self.assert_square();
-
         assert_eq!(d.column_count(), 1);
-        let n = d.len();
+        assert_eq!(d.row_count(), self.row_count());
+
+        let n = d.row_count();
         let mut a = vec![T::zero(); n];
         let mut b = vec![T::zero(); n];
         let mut c = vec![T::zero(); n];
@@ -122,10 +123,10 @@ where
         p[0] = -c[0] / b[0];
         q[0] = d[0][0] / b[0];
 
-        for i in 1..(n - 1) {
-            let denom = b[i] + a[i] * p[i - 1];
-            p[i] = -c[i] / denom;
-            q[i] = (d[i][0] - a[i] * q[i - 1]) / denom;
+        for i in 1..n - 1 {
+            let denominator = b[i] + a[i] * p[i - 1];
+            p[i] = -c[i] / denominator;
+            q[i] = (d[i][0] - a[i] * q[i - 1]) / denominator;
         }
 
         x[n - 1][0] = (d[n - 1][0] - a[n - 1] * q[n - 2]) / (b[n - 1] + a[n - 1] * p[n - 2]);
@@ -277,10 +278,7 @@ where
     }
 }
 
-impl<T> Deref for Matrix<T>
-where
-    T: Float,
-{
+impl<T> Deref for Matrix<T> {
     type Target = Vec<Vec<T>>;
 
     fn deref(&self) -> &Self::Target {
@@ -288,10 +286,7 @@ where
     }
 }
 
-impl<T> DerefMut for Matrix<T>
-where
-    T: Float,
-{
+impl<T> DerefMut for Matrix<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.values
     }
