@@ -1,5 +1,4 @@
 use std::{
-    cell::LazyCell,
     fmt::{Debug, Display},
     ops::{Deref, DerefMut},
 };
@@ -13,9 +12,9 @@ pub struct Matrix<T> {
 
 impl<T> Matrix<T>
 where
-    T: Float + Default + Debug + From<f64>,
+    T: Float,
 {
-    const EPS: LazyCell<T> = LazyCell::new(|| 1e-5.into());
+    const EPS: f64 = 1e-5;
 
     /// # Panics
     /// Zero rows
@@ -264,7 +263,7 @@ where
 
 impl<T> Deref for Matrix<T>
 where
-    T: Float + Default + Debug,
+    T: Float,
 {
     type Target = Vec<Vec<T>>;
 
@@ -275,7 +274,7 @@ where
 
 impl<T> DerefMut for Matrix<T>
 where
-    T: Float + Default + Debug,
+    T: Float,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.values
@@ -284,12 +283,12 @@ where
 
 impl<T> PartialEq for Matrix<T>
 where
-    T: Float + Default + Debug + From<f64>,
+    T: Float + From<f64>,
 {
     fn eq(&self, other: &Self) -> bool {
         for (r1, r2) in self.iter().zip(other.iter()) {
             for (e1, e2) in r1.iter().zip(r2.iter()) {
-                if (*e1 - *e2).abs() > *Matrix::EPS {
+                if (*e1 - *e2).abs() > Matrix::<T>::EPS.into() {
                     return false;
                 }
             }
@@ -299,11 +298,11 @@ where
     }
 }
 
-impl<T> Eq for Matrix<T> where T: Float + Default + Debug + From<f64> {}
+impl<T> Eq for Matrix<T> where T: Float + From<f64> {}
 
 impl<T> Display for Matrix<T>
 where
-    T: Float + Default + Display,
+    T: Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut col_widths = Vec::new();
