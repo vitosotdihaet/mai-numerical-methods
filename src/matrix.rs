@@ -28,6 +28,24 @@ where
         Self { values }
     }
 
+    pub fn column(values: &[T]) -> Self {
+        let n = values.len();
+        let mut v: Vec<Vec<T>> = Vec::with_capacity(values.len());
+        v.resize(n, Vec::with_capacity(1));
+
+        for i in 0..n {
+            v[i].push(values[i]);
+        }
+
+        Self { values: v }
+    }
+
+    pub fn row(values: Vec<T>) -> Self {
+        Self {
+            values: vec![values],
+        }
+    }
+
     pub fn inversed(&self) -> Self {
         self.assert_square();
 
@@ -125,7 +143,7 @@ where
 
         let (l, u) = self.get_lu();
 
-        Matrix::solve_lu_with(&l, &u, &b)
+        Matrix::solve_lu_with(&l, &u, b)
     }
 
     pub fn solve_lu_with(l: &Self, u: &Self, b: &Self) -> Self {
@@ -134,10 +152,8 @@ where
 
         assert_eq!(b.column_count(), 1);
 
-        let z = Matrix::get_z(&l, &b);
-        let x = Matrix::get_x(&u, &z);
-
-        x
+        let z = Matrix::get_z(l, b);
+        Matrix::get_x(u, &z)
     }
 
     /// # Panics
@@ -191,7 +207,7 @@ where
 
         let n = l.row_count();
 
-        let mut z = Matrix::like(&b);
+        let mut z = Matrix::like(b);
 
         for i in 0..n {
             let mut s = T::zero();
@@ -212,7 +228,7 @@ where
 
         let n = u.row_count();
 
-        let mut x = Matrix::like(&z);
+        let mut x = Matrix::like(z);
 
         for i in 0..n {
             let i = n - 1 - i;

@@ -34,7 +34,7 @@ mod labs {
             vec![-7., -9., -8., -5.],
         ]);
 
-        let b = Matrix::new(vec![vec![-126., 29., 27., 34.]]).transposed();
+        let b = Matrix::column(&vec![-126., 29., 27., 34.]);
 
         let (l, u) = a.get_lu();
 
@@ -61,10 +61,7 @@ mod labs {
 
         // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,3,-4,7,-126%7D,%7B8,-1,-7,6,29%7D,%7B9,9,3,-6,27%7D,%7B-7,-9,-8,-5,34%7D%7D%29
         let x = a.solve_lu(&b);
-        assert_eq!(
-            x,
-            Matrix::new(vec![vec![8.], vec![-9.], vec![2.], vec![-5.]])
-        );
+        assert_eq!(x, Matrix::column(&vec![8., -9., 2., -5.]));
 
         // https://math.semestr.ru/matrix/index.php
         let inversed = a.inversed();
@@ -92,10 +89,10 @@ mod labs {
             vec![0., 0., 0., -5., -6.],
         ]);
 
-        let d = Matrix::new(vec![vec![-75., 126., 13., -40., -24.]]).transposed();
+        let d = Matrix::column(&vec![-75., 126., 13., -40., -24.]);
 
         // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,-6,0,0,0,-75%7D,%7B6,12,0,0,0,126%7D,%7B0,-3,5,0,0,13%7D,%7B0,0,-9,21,8,-40%7D,%7B0,0,0,-5,-6,-24%7D%7D%29
         let x = a.solve_tridiagonal(&d);
-        assert_eq!(x, Matrix::new(vec![vec![3., 9., 8., 0., 4.]]));
+        assert_eq!(x, Matrix::row(vec![3., 9., 8., 0., 4.]));
     }
 }
