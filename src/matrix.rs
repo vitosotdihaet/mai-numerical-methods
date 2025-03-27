@@ -106,11 +106,23 @@ where
 
         for i in 0..n {
             b[i] = self[i][i];
-            if i > 0 {
+
+            if i != 0 {
                 a[i] = self[i][i - 1];
             }
-            if i < n - 1 {
+
+            if i != n - 1 {
                 c[i] = self[i][i + 1];
+            } else {
+                assert!(a[i] != T::zero());
+            }
+
+            if i == 0 {
+                assert!(c[i] != T::zero());
+            }
+
+            if i > 0 && i < n - 1 {
+                assert!(b[i] >= a[i] + c[i]);
             }
         }
 
