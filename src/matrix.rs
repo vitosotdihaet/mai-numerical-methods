@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Mul},
 };
 
 use num::Float;
@@ -328,5 +328,31 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<T> Mul for Matrix<T>
+where
+    T: Float,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let p = self.row_count();
+        let q = self.column_count();
+        assert_eq!(q, rhs.row_count());
+        let r = rhs.column_count();
+
+        let mut out = Self::zero_matrix(p, r);
+
+        for i in 0..p {
+            for j in 0..r {
+                for k in 0..q {
+                    out[i][j] = out[i][j] + self[i][k] * rhs[k][j];
+                }
+            }
+        }
+
+        out
     }
 }

@@ -12,6 +12,14 @@ mod tests {
             Matrix::new(vec![vec![1., 0., 0.], vec![0., 1., 0.], vec![0., 0., 1.],])
         );
     }
+
+    #[test]
+    fn multiplication() {
+        assert_eq!(
+            Matrix::row(vec![1., 2., 3.]) * Matrix::column(&vec![4., 5., 6.]),
+            Matrix::row(vec![32.])
+        );
+    }
 }
 
 #[cfg(test)]
@@ -74,6 +82,9 @@ mod labs {
                 vec![19. / 1100., 9. / 275., -52. / 825., -67. / 1100.],
             ])
         );
+
+        let n = a.row_count();
+        assert_eq!(a.clone() * inversed, Matrix::identity(n));
 
         let determinant = a.determinant();
         assert!((determinant - 16500. as f64).abs() < 1e-9);
