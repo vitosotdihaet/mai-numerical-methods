@@ -186,7 +186,7 @@ where
     /// Get z from Lz = b
     fn get_z(l: &Self, b: &Self) -> Self {
         assert_eq!(b.column_count(), 1);
-        assert_eq!(l.row_count(), l.column_count());
+        l.assert_square();
 
         let n = l.row_count();
 
@@ -207,7 +207,7 @@ where
     /// Get x from Ux = z
     fn get_x(u: &Self, z: &Self) -> Self {
         assert_eq!(z.column_count(), 1);
-        assert_eq!(u.row_count(), u.column_count());
+        u.assert_square();
 
         let n = u.row_count();
 
