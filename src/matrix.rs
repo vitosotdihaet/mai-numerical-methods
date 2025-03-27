@@ -58,7 +58,7 @@ where
         let mut inversed_rows = Vec::with_capacity(n);
 
         for current_e in e.iter() {
-            let r = Matrix::solve_lu_with(&l, &u, &Matrix::column(&current_e));
+            let r = Matrix::solve_lu_with(&l, &u, &Matrix::column(current_e));
             inversed_rows.push(r.transposed().values.into_iter().next().unwrap());
         }
 
