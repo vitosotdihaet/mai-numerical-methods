@@ -59,8 +59,7 @@ where
 
         for current_e in e.iter() {
             let r = Matrix::solve_lu_with(&l, &u, &Matrix::column(&current_e));
-            let t = r.transposed();
-            inversed_rows.push(t.values.into_iter().next().unwrap());
+            inversed_rows.push(r.transposed().values.into_iter().next().unwrap());
         }
 
         Matrix::new(inversed_rows).transposed()
@@ -173,22 +172,6 @@ where
         // let mut swaps = Vec::with_capacity(self.row_count());
 
         for k in 0..n {
-            // TODO: float optimization
-            // let mut max_in_column = T::min_value();
-            // let mut max_in_column_row_index = 0;
-
-            // for i in k + 1..self.row_count() {
-            //     if max_in_column < u[i][k] {
-            //         max_in_column = u[i][k].abs();
-            //         max_in_column_row_index = i;
-            //     }
-            // }
-
-            // // swap kth row with the row, where leftmost nonzero element is the biggest in all rows
-            // swaps.push(max_in_column_row_index);
-            // u.swap(k, max_in_column_row_index);
-            // l.swap(k, max_in_column_row_index);
-
             for i in k + 1..n {
                 l[i][k] = u[i][k] / u[k][k];
                 for j in k..n {

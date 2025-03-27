@@ -61,7 +61,7 @@ b_1 & c_1 & 0 & \cdots & 0 \\
 a_2 & b_2 & c_2 & \cdots & 0 \\
 0 & a_3 & b_3 & \cdots & 0 \\
 \cdots & \cdots & \cdots & \cdots & \cdots \\
-0 & 0 & 0 & \cdots & c_n \\
+0 & 0 & 0 & \cdots & b_n \\
 \end{pmatrix}
 x = d
 $$
