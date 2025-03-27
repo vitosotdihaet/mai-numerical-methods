@@ -169,8 +169,6 @@ where
         let mut u = self.clone();
         let mut l = Matrix::identity(self.row_count());
 
-        // let mut swaps = Vec::with_capacity(self.row_count());
-
         for k in 0..n {
             for i in k + 1..n {
                 l[i][k] = u[i][k] / u[k][k];
