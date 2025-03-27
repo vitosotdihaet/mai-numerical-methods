@@ -58,8 +58,7 @@ where
         let mut inversed_rows = Vec::with_capacity(n);
 
         for current_e in e.iter() {
-            let r =
-                Matrix::solve_lu_with(&l, &u, &Matrix::new(vec![current_e.clone()]).transposed());
+            let r = Matrix::solve_lu_with(&l, &u, &Matrix::column(&current_e));
             let t = r.transposed();
             inversed_rows.push(t.values.into_iter().next().unwrap());
         }
@@ -163,7 +162,7 @@ where
         assert_eq!(self.row_count(), self.column_count());
     }
 
-    pub(crate) fn get_lu(&self) -> (Self, Self) {
+    pub fn get_lu(&self) -> (Self, Self) {
         self.assert_square();
 
         let n = self.row_count();
