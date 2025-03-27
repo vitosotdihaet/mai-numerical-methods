@@ -40,10 +40,39 @@ where
         Self { values: v }
     }
 
+    #[inline(always)]
     pub fn row(values: Vec<T>) -> Self {
         Self {
             values: vec![values],
         }
+    }
+
+    #[inline(always)]
+    pub fn zero(row_count: usize, colum_count: usize) -> Self {
+        Self {
+            values: (0..row_count)
+                .map(|_| (0..colum_count).map(|_| T::zero()).collect())
+                .collect(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn identity(n: usize) -> Self {
+        Self {
+            values: (0..n)
+                .map(|i| {
+                    (0..n)
+                        .map(|j| if i == j { T::one() } else { T::zero() })
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+
+    /// Returns a zero matrix with the same dimensions as the input one
+    #[inline(always)]
+    pub fn like(other: &Self) -> Self {
+        Matrix::zero(other.row_count(), other.column_count())
     }
 
     pub fn inversed(&self) -> Self {
@@ -83,7 +112,7 @@ where
         let c = self.column_count();
         let r = self.row_count();
 
-        let mut t = Matrix::zero_matrix(self.column_count(), self.row_count());
+        let mut t = Matrix::zero(self.column_count(), self.row_count());
 
         for i in 0..c {
             for j in 0..r {
@@ -92,6 +121,35 @@ where
         }
 
         t
+    }
+
+    #[inline(always)]
+    pub fn row_count(&self) -> usize {
+        self.values.len()
+    }
+
+    #[inline(always)]
+    pub fn column_count(&self) -> usize {
+        self.values.first().unwrap().len()
+    }
+
+    pub fn norm2(&self) -> T {
+        let mut norm = T::zero();
+
+        for row in self.iter() {
+            for &a in row {
+                norm = norm + a * a
+            }
+        }
+
+        norm.sqrt()
+    }
+
+    /// # Panics
+    /// Matrix is not square
+    #[inline(always)]
+    fn assert_square(&self) {
+        assert_eq!(self.row_count(), self.column_count());
     }
 
     pub fn solve_tridiagonal(&self, d: &Self) -> Self {
@@ -167,12 +225,6 @@ where
         Matrix::get_x(u, &z)
     }
 
-    /// # Panics
-    /// Matrix is not square
-    fn assert_square(&self) {
-        assert_eq!(self.row_count(), self.column_count());
-    }
-
     pub fn get_lu(&self) -> (Self, Self) {
         self.assert_square();
 
@@ -234,39 +286,6 @@ where
         }
 
         x
-    }
-
-    pub fn row_count(&self) -> usize {
-        self.values.len()
-    }
-
-    pub fn column_count(&self) -> usize {
-        self.values.first().unwrap().len()
-    }
-
-    pub fn zero_matrix(row_count: usize, colum_count: usize) -> Self {
-        Self {
-            values: (0..row_count)
-                .map(|_| (0..colum_count).map(|_| T::zero()).collect())
-                .collect(),
-        }
-    }
-
-    pub fn identity(n: usize) -> Self {
-        Self {
-            values: (0..n)
-                .map(|i| {
-                    (0..n)
-                        .map(|j| if i == j { T::one() } else { T::zero() })
-                        .collect()
-                })
-                .collect(),
-        }
-    }
-
-    /// Returns a zero matrix with the same dimensions as the input one
-    pub fn like(other: &Self) -> Self {
-        Matrix::zero_matrix(other.row_count(), other.column_count())
     }
 }
 
@@ -343,7 +362,7 @@ where
         assert_eq!(q, rhs.row_count());
         let r = rhs.column_count();
 
-        let mut out = Self::zero_matrix(p, r);
+        let mut out = Self::zero(p, r);
 
         for i in 0..p {
             for j in 0..r {
