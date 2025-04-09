@@ -1,7 +1,9 @@
 use std::{
     fmt::{Debug, Display},
-    ops::{Deref, DerefMut, Mul},
+    ops::{Add, Deref, DerefMut, Mul, Sub},
 };
+
+use crate::error::Error as MatrixError;
 
 use num::Float;
 
@@ -135,14 +137,34 @@ where
 
     pub fn norm2(&self) -> T {
         let mut norm = T::zero();
-
         for row in self.iter() {
             for &a in row {
                 norm = norm + a * a
             }
         }
-
         norm.sqrt()
+    }
+
+    pub fn norm1(&self) -> T {
+        let mut norm = T::zero();
+        for row in self.iter() {
+            for &a in row {
+                norm = norm + a
+            }
+        }
+        norm
+    }
+
+    pub fn eq_lossy(&self, other: &Self, accuracy: T) -> bool {
+        for (r1, r2) in self.iter().zip(other.iter()) {
+            for (e1, e2) in r1.iter().zip(r2.iter()) {
+                if (*e1 - *e2).abs() > accuracy {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 
     /// # Panics
@@ -152,9 +174,23 @@ where
         assert_eq!(self.row_count(), self.column_count());
     }
 
+    /// # Panics
+    /// Matrix is not a column
+    #[inline(always)]
+    fn assert_column(&self) {
+        assert_eq!(self.column_count(), 1);
+    }
+
+    /// # Panics
+    /// Matrix is not a row
+    #[inline(always)]
+    fn assert_row(&self) {
+        assert_eq!(self.row_count(), 1);
+    }
+
     pub fn solve_tridiagonal(&self, d: &Self) -> Self {
         self.assert_square();
-        assert_eq!(d.column_count(), 1);
+        d.assert_column();
         assert_eq!(d.row_count(), self.row_count());
 
         let n = d.row_count();
@@ -208,7 +244,7 @@ where
 
     pub fn solve_lu(&self, b: &Self) -> Self {
         self.assert_square();
-        assert_eq!(b.column_count(), 1);
+        b.assert_column();
 
         let (l, u) = self.get_lu();
 
@@ -218,8 +254,7 @@ where
     pub fn solve_lu_with(l: &Self, u: &Self, b: &Self) -> Self {
         l.assert_square();
         u.assert_square();
-
-        assert_eq!(b.column_count(), 1);
+        b.assert_column();
 
         let z = Matrix::get_z(l, b);
         Matrix::get_x(u, &z)
@@ -247,7 +282,7 @@ where
 
     /// Get z from Lz = b
     fn get_z(l: &Self, b: &Self) -> Self {
-        assert_eq!(b.column_count(), 1);
+        b.assert_column();
         l.assert_square();
 
         let n = l.row_count();
@@ -268,7 +303,7 @@ where
 
     /// Get x from Ux = z
     fn get_x(u: &Self, z: &Self) -> Self {
-        assert_eq!(z.column_count(), 1);
+        z.assert_column();
         u.assert_square();
 
         let n = u.row_count();
@@ -286,6 +321,141 @@ where
         }
 
         x
+    }
+
+    /// Returns alpha and beta, where x^(k) = beta + alpha * x^(k - 1)
+    fn setup_jacobian_seidel(&self, b: &Self) -> (Self, Self) {
+        let n = self.row_count();
+        let mut alpha = Matrix::like(self);
+        let mut beta = Matrix::like(b);
+
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    alpha[i][j] = -self[i][j] / self[i][i];
+                } else {
+                    alpha[i][j] = T::zero();
+                    beta[i][0] = b[i][0] / self[i][j];
+                }
+            }
+        }
+
+        (alpha, beta)
+    }
+
+    pub fn solve_jacobian(&self, b: &Self, accuracy: T) -> Result<Self, MatrixError> {
+        self.assert_square();
+        b.assert_column();
+        let n = self.row_count();
+        assert_eq!(n, b.row_count());
+
+        if !self.jacobian_converges() {
+            return Err(MatrixError::MethodDoesNotConverge);
+        }
+
+        let (alpha, beta) = self.setup_jacobian_seidel(b);
+
+        let mut prev_x = Matrix::zero(n, 1);
+        for i in 0..n {
+            prev_x[i][0] = beta[i][0];
+        }
+        let mut x = &beta + &(&alpha * &prev_x);
+
+        let an = alpha.norm2();
+        let iter_count = (accuracy.log(an) + (T::from(1.).unwrap() - an).log(an)
+            - (&x - &prev_x).norm2().log(an))
+        .to_f64()
+        .unwrap() as usize;
+
+        if an >= T::from(1.).unwrap() {
+            for _ in 1..1000 {
+                prev_x = x;
+                x = &beta + &(&alpha * &prev_x);
+                if (&prev_x - &x).norm2() < accuracy {
+                    break;
+                }
+            }
+        } else {
+            for _ in 1..iter_count {
+                x = &beta + &(&alpha * &x);
+            }
+        }
+
+        Ok(x)
+    }
+
+    pub fn solve_seidel(&self, b: &Self, accuracy: T) -> Result<Self, MatrixError> {
+        self.assert_square();
+        b.assert_column();
+        let n = self.row_count();
+        assert_eq!(n, b.row_count());
+
+        if !self.jacobian_converges() {
+            return Err(MatrixError::MethodDoesNotConverge);
+        }
+
+        let (mut alpha, mut beta) = self.setup_jacobian_seidel(b);
+        let mut big_b = Matrix::like(&alpha);
+        let mut big_c = Matrix::like(&alpha);
+
+        for i in 0..n {
+            for j in 0..n {
+                if j >= i {
+                    big_c[i][j] = alpha[i][j];
+                } else {
+                    big_b[i][j] = alpha[i][j];
+                }
+            }
+        }
+
+        let e = Matrix::identity(n);
+        let t = (&e - &big_b).inversed();
+        alpha = &t * &big_c;
+        beta = &t * &beta;
+
+        let mut prev_x = Matrix::zero(n, 1);
+        for i in 0..n {
+            prev_x[i][0] = beta[i][0];
+        }
+        let mut x = &beta + &(&alpha * &prev_x);
+
+        let an = alpha.norm2();
+        let iter_count = (accuracy.log(an) + (T::from(1.).unwrap() - an).log(an)
+            - (&x - &prev_x).norm2().log(an))
+        .to_f64()
+        .unwrap() as usize;
+
+        if an >= T::from(1.).unwrap() {
+            for _ in 1..1000 {
+                prev_x = x;
+                x = &beta + &(&alpha * &prev_x);
+                if (&prev_x - &x).norm2() < accuracy {
+                    break;
+                }
+            }
+        } else {
+            for _ in 1..iter_count {
+                x = &beta + &(&alpha * &x);
+            }
+        }
+
+        Ok(x)
+    }
+
+    fn jacobian_converges(&self) -> bool {
+        let n = self.row_count();
+        for i in 0..n {
+            let mut s = T::zero();
+            for j in 0..n {
+                if i != j {
+                    s = s + self[i][j].abs();
+                }
+            }
+            if self[i][i].abs() <= s {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -350,11 +520,101 @@ where
     }
 }
 
-impl<T> Mul for Matrix<T>
+impl<T> Add for Matrix<T>
 where
     T: Float,
 {
     type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        let n = self.row_count();
+        assert_eq!(n, rhs.row_count());
+        let m = self.column_count();
+        assert_eq!(m, rhs.column_count());
+
+        for i in 0..n {
+            for j in 0..m {
+                self[i][j] = self[i][j] + rhs[i][j];
+            }
+        }
+
+        self
+    }
+}
+
+impl<T> Add for &Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let n = self.row_count();
+        assert_eq!(n, rhs.row_count());
+        let m = self.column_count();
+        assert_eq!(m, rhs.column_count());
+
+        let mut res = Matrix::like(self);
+        for i in 0..n {
+            for j in 0..m {
+                res[i][j] = self[i][j] + rhs[i][j];
+            }
+        }
+
+        res
+    }
+}
+
+impl<T> Sub for &Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let n = self.row_count();
+        assert_eq!(n, rhs.row_count());
+        let m = self.column_count();
+        assert_eq!(m, rhs.column_count());
+
+        let mut res = Matrix::like(self);
+        for i in 0..n {
+            for j in 0..m {
+                res[i][j] = self[i][j] - rhs[i][j];
+            }
+        }
+
+        res
+    }
+}
+
+impl<T> Sub for Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
+
+    fn sub(mut self, rhs: Self) -> Self::Output {
+        let n = self.row_count();
+        assert_eq!(n, rhs.row_count());
+        let m = self.column_count();
+        assert_eq!(m, rhs.column_count());
+
+        for i in 0..n {
+            for j in 0..m {
+                self[i][j] = self[i][j] - rhs[i][j];
+            }
+        }
+
+        self
+    }
+}
+
+impl<T> Mul for &Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         let p = self.row_count();
@@ -362,7 +622,7 @@ where
         assert_eq!(q, rhs.row_count());
         let r = rhs.column_count();
 
-        let mut out = Self::zero(p, r);
+        let mut out = Matrix::zero(p, r);
 
         for i in 0..p {
             for j in 0..r {

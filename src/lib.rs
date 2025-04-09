@@ -1,3 +1,4 @@
+pub mod error;
 pub mod matrix;
 
 #[cfg(test)]
@@ -16,9 +17,18 @@ mod tests {
     #[test]
     fn multiplication() {
         assert_eq!(
-            Matrix::row(vec![1., 2., 3.]) * Matrix::column(&vec![4., 5., 6.]),
+            &Matrix::row(vec![1., 2., 3.]) * &Matrix::column(&[4., 5., 6.]),
             Matrix::row(vec![32.])
         );
+    }
+
+    #[test]
+    fn addition() {
+        assert_eq!(
+            Matrix::new(vec![vec![1., 2.], vec![3., 4.]])
+                + Matrix::new(vec![vec![3., 7.], vec![3., 5.]]),
+            Matrix::new(vec![vec![4., 9.], vec![6., 9.]])
+        )
     }
 }
 
@@ -42,7 +52,7 @@ mod labs {
             vec![-7., -9., -8., -5.],
         ]);
 
-        let b = Matrix::column(&vec![-126., 29., 27., 34.]);
+        let b = Matrix::column(&[-126., 29., 27., 34.]);
 
         let (l, u) = a.get_lu();
 
@@ -69,7 +79,7 @@ mod labs {
 
         // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,3,-4,7,-126%7D,%7B8,-1,-7,6,29%7D,%7B9,9,3,-6,27%7D,%7B-7,-9,-8,-5,34%7D%7D%29
         let x = a.solve_lu(&b);
-        assert_eq!(x, Matrix::column(&vec![8., -9., 2., -5.]));
+        assert_eq!(x, Matrix::column(&[8., -9., 2., -5.]));
 
         // https://math.semestr.ru/matrix/index.php
         let inversed = a.inversed();
@@ -84,10 +94,10 @@ mod labs {
         );
 
         let n = a.row_count();
-        assert_eq!(a.clone() * inversed, Matrix::identity(n));
+        assert_eq!(&a.clone() * &inversed, Matrix::identity(n));
 
         let determinant = a.determinant();
-        assert!((determinant - 16500. as f64).abs() < 1e-9);
+        assert!((determinant - 16500_f64).abs() < 1e-9);
     }
 
     #[test]
@@ -100,10 +110,59 @@ mod labs {
             vec![0., 0., 0., -5., -6.],
         ]);
 
-        let d = Matrix::column(&vec![-75., 126., 13., -40., -24.]);
+        let d = Matrix::column(&[-75., 126., 13., -40., -24.]);
 
         // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B-7,-6,0,0,0,-75%7D,%7B6,12,0,0,0,126%7D,%7B0,-3,5,0,0,13%7D,%7B0,0,-9,21,8,-40%7D,%7B0,0,0,-5,-6,-24%7D%7D%29
         let x = a.solve_tridiagonal(&d);
         assert_eq!(x, Matrix::row(vec![3., 9., 8., 0., 4.]));
     }
+
+    #[test]
+    fn lab_1_3_test() {
+        let a = Matrix::new(vec![
+            vec![10., 1., 1.],
+            vec![2., 10., 1.],
+            vec![2., 2., 10.],
+        ]);
+
+        let b = Matrix::column(&[12., 13., 14.]);
+
+        let accuracy = 1e-2;
+
+        let answ = Matrix::column(&[1., 1., 1.]);
+        assert!(a
+            .solve_jacobian(&b, accuracy)
+            .unwrap()
+            .eq_lossy(&answ, accuracy));
+        assert!(a
+            .solve_seidel(&b, accuracy)
+            .unwrap()
+            .eq_lossy(&answ, accuracy));
+    }
+
+    #[test]
+    fn lab_1_3() {
+        let a = Matrix::new(vec![
+            vec![28., 9., -3., -7.],
+            vec![-5., 21., -5., -3.],
+            vec![-8., 1., -16., 5.],
+            vec![0., -2., 5., 8.],
+        ]);
+
+        let b = Matrix::column(&[-159., 63., -45., 24.]);
+
+        let accuracy = 1e-5;
+
+        // https://matrixcalc.org/ru/slu.html#solve-using-Gaussian-elimination%28%7B%7B28,9,-3,-7,-159%7D,%7B-5,21,-5,-3,63%7D,%7B-8,1,-16,5,-45%7D,%7B0,-2,5,8,24%7D%7D%29
+        let answ = Matrix::column(&[-6., 3., 6., 0.]);
+
+        let x_jacobian = a.solve_jacobian(&b, accuracy).unwrap();
+        assert!(x_jacobian.eq_lossy(&answ, accuracy));
+
+        let x_seidel = a.solve_seidel(&b, accuracy).unwrap();
+        assert!(x_seidel.eq_lossy(&answ, accuracy));
+    }
+
+    #[test]
+    fn lab_1_4() {}
 }
