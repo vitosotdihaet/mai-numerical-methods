@@ -1,11 +1,13 @@
 use std::{
+    collections::HashMap,
+    f64::consts::PI,
     fmt::{Debug, Display},
     ops::{Add, Deref, DerefMut, Mul, Sub},
 };
 
 use crate::error::Error as MatrixError;
 
-use num::Float;
+use num::{Complex, Float};
 
 #[derive(Debug, Clone)]
 pub struct Matrix<T> {
@@ -96,6 +98,19 @@ where
         Matrix::new(inversed_rows).transposed()
     }
 
+    pub fn is_symmetrical(&self) -> bool {
+        self.assert_square();
+        let n = self.row_count();
+        for i in 0..n {
+            for j in 0..i {
+                if self[i][j] != self[j][i] {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     pub fn determinant(&self) -> T {
         self.assert_square();
         let n = self.row_count();
@@ -181,11 +196,18 @@ where
         assert_eq!(self.column_count(), 1);
     }
 
+    // /// # Panics
+    // /// Matrix is not a row
+    // #[inline(always)]
+    // fn assert_row(&self) {
+    //     assert_eq!(self.row_count(), 1);
+    // }
+
     /// # Panics
     /// Matrix is not a row
     #[inline(always)]
-    fn assert_row(&self) {
-        assert_eq!(self.row_count(), 1);
+    fn assert_symmetrical(&self) {
+        assert!(self.is_symmetrical());
     }
 
     pub fn solve_tridiagonal(&self, d: &Self) -> Self {
@@ -457,6 +479,190 @@ where
         }
         true
     }
+
+    pub fn evs_from_symmetrical_matrix(&self, accuracy: T) -> Vec<(T, Self)> {
+        self.assert_symmetrical();
+        let n = self.row_count();
+        let mut evs = Vec::with_capacity(n);
+
+        let mut a_k = self.clone();
+        let mut u = Matrix::identity(n);
+
+        loop {
+            let mut maxi = -T::infinity();
+            let (mut maxi_i, mut maxi_j) = (0, 0);
+
+            for i in 0..n {
+                for j in i + 1..n {
+                    let a = a_k[i][j].abs();
+                    if a > maxi {
+                        maxi = a;
+                        maxi_i = i;
+                        maxi_j = j;
+                    }
+                }
+            }
+
+            let a_ii = a_k[maxi_i][maxi_i];
+            let a_jj = a_k[maxi_j][maxi_j];
+            let phi = if (a_ii - a_jj).abs() < T::from(Matrix::<T>::EPS).unwrap() {
+                T::from(PI / 4.).unwrap()
+            } else {
+                (T::from(2.).unwrap() * a_k[maxi_i][maxi_j] / (a_ii - a_jj)).atan()
+                    / T::from(2.).unwrap()
+            };
+
+            let (sin_phi, cos_phi) = phi.sin_cos();
+            let mut u_k = Matrix::identity(n);
+            u_k[maxi_i][maxi_j] = -sin_phi;
+            u_k[maxi_j][maxi_i] = sin_phi;
+            u_k[maxi_i][maxi_i] = cos_phi;
+            u_k[maxi_j][maxi_j] = cos_phi;
+
+            u = &u * &u_k;
+
+            a_k = &(&u_k.transposed() * &a_k) * &u_k;
+            let mut s = T::zero();
+            for i in 0..n {
+                for j in 0..i {
+                    s = s + a_k[i][j] * a_k[i][j];
+                }
+            }
+
+            if s.sqrt() <= accuracy {
+                break;
+            }
+        }
+
+        for i in 0..n {
+            let mut col = Vec::with_capacity(n);
+            for j in 0..n {
+                col.push(u[j][i]);
+            }
+            evs.push((a_k[i][i], Matrix::column(&col)));
+        }
+
+        evs
+    }
+
+    pub fn eigen_values(&self, tolerance: T, max_iterations: u64) -> Vec<Complex<T>> {
+        self.assert_square();
+        let n = self.row_count();
+        let mut a = self.clone();
+        let mut converged = vec![false; n];
+
+        for _ in 0..max_iterations {
+            let mut all_converged = true;
+            let mut i = 0;
+
+            while i < n {
+                if converged[i] {
+                    i += 1;
+                    continue;
+                }
+
+                if i < n - 1 && a[i + 1][i].abs() > tolerance {
+                    let c = a[i + 1][i];
+                    let subdiag_norm = if i < n - 2 {
+                        (c * c + a[i + 2][i + 1].powi(2)).sqrt()
+                    } else {
+                        c.abs()
+                    };
+
+                    if subdiag_norm <= tolerance {
+                        converged[i] = true;
+                        converged[i + 1] = true;
+                        i += 2;
+                    } else {
+                        all_converged = false;
+                        i += 1;
+                    }
+                } else {
+                    let sum_squares: T = (i + 1..n)
+                        .map(|j| a[j][i] * a[j][i])
+                        .fold(T::zero(), |acc, x| acc + x);
+                    let norm = sum_squares.sqrt();
+
+                    if norm <= tolerance {
+                        converged[i] = true;
+                    } else {
+                        all_converged = false;
+                    }
+                    i += 1;
+                }
+            }
+
+            if converged.iter().all(|&c| c) {
+                break;
+            }
+
+            let (q, r) = a.get_qr();
+            a = &r * &q;
+        }
+
+        let mut eigenvalues = Vec::with_capacity(n);
+        let mut i = 0;
+        while i < n {
+            if i < n - 1 && a[i + 1][i].abs() > tolerance {
+                let a_ii = a[i][i];
+                let a_ij = a[i][i + 1];
+                let a_ji = a[i + 1][i];
+                let a_jj = a[i + 1][i + 1];
+
+                let trace = a_ii + a_jj;
+                let determinant = a_ii * a_jj - a_ij * a_ji;
+                let discriminant = trace.powi(2) - T::from(4.0).unwrap() * determinant;
+
+                if discriminant < T::zero() {
+                    let real = trace / T::from(2.0).unwrap();
+                    let imag = (-discriminant).sqrt() / T::from(2.0).unwrap();
+                    eigenvalues.push(Complex::new(real, imag));
+                    eigenvalues.push(Complex::new(real, -imag));
+                } else {
+                    let sqrt_d = discriminant.sqrt();
+                    eigenvalues.push(Complex::new(
+                        (trace + sqrt_d) / T::from(2.0).unwrap(),
+                        T::zero(),
+                    ));
+                    eigenvalues.push(Complex::new(
+                        (trace - sqrt_d) / T::from(2.0).unwrap(),
+                        T::zero(),
+                    ));
+                }
+                i += 2;
+            } else {
+                eigenvalues.push(Complex::new(a[i][i], T::zero()));
+                i += 1;
+            }
+        }
+
+        eigenvalues
+    }
+
+    pub fn get_qr(&self) -> (Self, Self) {
+        let n = self.row_count();
+        let mut r = self.clone();
+        let mut q = Matrix::identity(n);
+
+        for i in 0..n - 1 {
+            let mut v = Matrix::zero(n, 1);
+            let mut n2 = T::zero();
+            for j in i..n {
+                n2 = n2 + r[j][i] * r[j][i];
+            }
+            v[i][0] = r[i][i] + r[i][i].signum() * n2.sqrt();
+            for j in i + 1..n {
+                v[j][0] = r[j][i];
+            }
+            let vt = v.transposed();
+            let h = Matrix::identity(n)
+                - (&(&v * &vt) * (T::one() / (&vt * &v)[0][0])) * T::from(2.).unwrap();
+            q = &q * &h;
+            r = &h * &r;
+        }
+
+        (q, r)
+    }
 }
 
 impl<T> Deref for Matrix<T> {
@@ -629,6 +835,41 @@ where
                 for k in 0..q {
                     out[i][j] = out[i][j] + self[i][k] * rhs[k][j];
                 }
+            }
+        }
+
+        out
+    }
+}
+
+impl<T> Mul<T> for Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
+
+    fn mul(mut self, num: T) -> Self::Output {
+        for i in 0..self.row_count() {
+            for j in 0..self.column_count() {
+                self[i][j] = self[i][j] * num;
+            }
+        }
+
+        self
+    }
+}
+
+impl<T> Mul<T> for &Matrix<T>
+where
+    T: Float,
+{
+    type Output = Matrix<T>;
+
+    fn mul(self, num: T) -> Self::Output {
+        let mut out = Matrix::like(self);
+        for i in 0..self.row_count() {
+            for j in 0..self.column_count() {
+                out[i][j] = self[i][j] * num;
             }
         }
 

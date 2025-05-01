@@ -30,10 +30,18 @@ mod tests {
             Matrix::new(vec![vec![4., 9.], vec![6., 9.]])
         )
     }
+
+    #[test]
+    fn symmetry() {
+        assert!(Matrix::new(vec![vec![1., 2.], vec![2., 3.]]).is_symmetrical());
+        assert!(!Matrix::new(vec![vec![1., 4.], vec![2., 3.]]).is_symmetrical());
+    }
 }
 
 #[cfg(test)]
 mod labs {
+    use num::{complex::ComplexFloat, Complex};
+
     use crate::matrix::Matrix;
 
     /// Ax = b
@@ -118,29 +126,6 @@ mod labs {
     }
 
     #[test]
-    fn lab_1_3_test() {
-        let a = Matrix::new(vec![
-            vec![10., 1., 1.],
-            vec![2., 10., 1.],
-            vec![2., 2., 10.],
-        ]);
-
-        let b = Matrix::column(&[12., 13., 14.]);
-
-        let accuracy = 1e-2;
-
-        let answ = Matrix::column(&[1., 1., 1.]);
-        assert!(a
-            .solve_jacobian(&b, accuracy)
-            .unwrap()
-            .eq_lossy(&answ, accuracy));
-        assert!(a
-            .solve_seidel(&b, accuracy)
-            .unwrap()
-            .eq_lossy(&answ, accuracy));
-    }
-
-    #[test]
     fn lab_1_3() {
         let a = Matrix::new(vec![
             vec![28., 9., -3., -7.],
@@ -164,5 +149,144 @@ mod labs {
     }
 
     #[test]
-    fn lab_1_4() {}
+    fn lab_1_4() {
+        let a = Matrix::new(vec![
+            vec![-7., -6., 8.],
+            vec![-6., 3., -7.],
+            vec![8., -7., 4.],
+        ]);
+
+        let accuracy = 1e-3;
+
+        let evs = a.evs_from_symmetrical_matrix(accuracy);
+
+        for (val, vec) in evs {
+            assert!((&a * &vec).eq_lossy(&(vec * val), accuracy));
+        }
+    }
+
+    #[test]
+    fn lab_1_5() {
+        let a = Matrix::new(vec![
+            vec![-1., 4., -4.],
+            vec![2., -5., 0.],
+            vec![-8., 2., 0.],
+        ]);
+
+        let accuracy = 1e-3;
+
+        let vals = a.eigen_values(accuracy, 1_000_000);
+        let answ = vec![
+            Complex::new(-8.1264, 0.),
+            Complex::new(5.40491, 0.),
+            Complex::new(-3.27851, 0.),
+        ];
+
+        'outer: for v in &vals {
+            for a in &answ {
+                if (*v - *a).abs() < accuracy {
+                    continue 'outer;
+                }
+            }
+            panic!("{v} was not found in {answ:?}");
+        }
+    }
+
+    // #[test]
+    // fn lab_2_1() {}
+}
+
+#[cfg(test)]
+mod lab_tests {
+    use num::{complex::ComplexFloat, Complex};
+
+    use crate::matrix::Matrix;
+
+    #[test]
+    fn lab_1_3() {
+        let a = Matrix::new(vec![
+            vec![10., 1., 1.],
+            vec![2., 10., 1.],
+            vec![2., 2., 10.],
+        ]);
+
+        let b = Matrix::column(&[12., 13., 14.]);
+
+        let accuracy = 1e-2;
+
+        let answ = Matrix::column(&[1., 1., 1.]);
+        assert!(a
+            .solve_jacobian(&b, accuracy)
+            .unwrap()
+            .eq_lossy(&answ, accuracy));
+        assert!(a
+            .solve_seidel(&b, accuracy)
+            .unwrap()
+            .eq_lossy(&answ, accuracy));
+    }
+
+    #[test]
+    fn lab_1_4() {
+        let a = Matrix::new(vec![vec![4., 2., 1.], vec![2., 5., 3.], vec![1., 3., 6.]]);
+
+        let accuracy = 0.3;
+
+        let evs = a.evs_from_symmetrical_matrix(accuracy);
+
+        for (val, vec) in evs {
+            assert!((&a * &vec).eq_lossy(&(vec * val), accuracy));
+        }
+    }
+
+    #[test]
+    fn lab_1_5() {
+        let a = Matrix::new(vec![vec![1., 3., 1.], vec![1., 1., 4.], vec![4., 3., 1.]]);
+
+        let (q, r) = a.get_qr();
+
+        assert!(q.eq_lossy(
+            &Matrix::new(vec![
+                vec![-0.24, 0.97, 0.11],
+                vec![-0.24, 0.05, -0.97],
+                vec![-0.94, -0.25, 0.22],
+            ]),
+            0.01,
+        ));
+
+        assert!(r.eq_lossy(
+            &Matrix::new(vec![
+                vec![-4.24, -3.77, -2.12],
+                vec![0., 2.19, 0.91],
+                vec![0., 0., -3.56],
+            ]),
+            0.01,
+        ));
+    }
+
+    #[test]
+    fn lab_1_5_extra() {
+        let a = Matrix::new(vec![
+            vec![-1., 0., -4.],
+            vec![2., -5., 0.],
+            vec![0., 2., 0.],
+        ]);
+
+        let accuracy = 1e-3;
+
+        let vals = a.eigen_values(accuracy, 1_000);
+        let answ = vec![
+            Complex::new(-5.61697, 0.),
+            Complex::new(-0.191517, 1.67685),
+            Complex::new(-0.191517, -1.67685),
+        ];
+
+        'outer: for v in &vals {
+            for a in &answ {
+                if (*v - *a).abs() < accuracy {
+                    continue 'outer;
+                }
+            }
+            panic!("{v} was not found in {answ:?}");
+        }
+    }
 }
