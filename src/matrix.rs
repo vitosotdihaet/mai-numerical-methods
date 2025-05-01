@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     f64::consts::PI,
     fmt::{Debug, Display},
     ops::{Add, Deref, DerefMut, Mul, Sub},
@@ -18,7 +17,7 @@ impl<T> Matrix<T>
 where
     T: Float,
 {
-    const EPS: f64 = 1e-5;
+    pub const EPS: f64 = 1e-5;
 
     /// # Panics
     /// Zero rows
@@ -365,11 +364,18 @@ where
         (alpha, beta)
     }
 
-    pub fn solve_jacobian(&self, b: &Self, accuracy: T) -> Result<Self, MatrixError> {
+    pub fn solve_jacobian(
+        &self,
+        b: &Self,
+        accuracy: T,
+        max_iterations: u64,
+    ) -> Result<Self, MatrixError> {
         self.assert_square();
         b.assert_column();
         let n = self.row_count();
         assert_eq!(n, b.row_count());
+
+        let accuracy = accuracy / T::from(10.).unwrap();
 
         if !self.jacobian_converges() {
             return Err(MatrixError::MethodDoesNotConverge);
@@ -384,13 +390,13 @@ where
         let mut x = &beta + &(&alpha * &prev_x);
 
         let an = alpha.norm2();
-        let iter_count = (accuracy.log(an) + (T::from(1.).unwrap() - an).log(an)
+        let iter_count = (accuracy.log(an) + (T::one() - an).log(an)
             - (&x - &prev_x).norm2().log(an))
         .to_f64()
         .unwrap() as usize;
 
         if an >= T::from(1.).unwrap() {
-            for _ in 1..1000 {
+            for _ in 1..max_iterations {
                 prev_x = x;
                 x = &beta + &(&alpha * &prev_x);
                 if (&prev_x - &x).norm2() < accuracy {
@@ -406,7 +412,12 @@ where
         Ok(x)
     }
 
-    pub fn solve_seidel(&self, b: &Self, accuracy: T) -> Result<Self, MatrixError> {
+    pub fn solve_seidel(
+        &self,
+        b: &Self,
+        accuracy: T,
+        max_iterations: u64,
+    ) -> Result<Self, MatrixError> {
         self.assert_square();
         b.assert_column();
         let n = self.row_count();
@@ -448,7 +459,7 @@ where
         .unwrap() as usize;
 
         if an >= T::from(1.).unwrap() {
-            for _ in 1..1000 {
+            for _ in 1..max_iterations {
                 prev_x = x;
                 x = &beta + &(&alpha * &prev_x);
                 if (&prev_x - &x).norm2() < accuracy {
@@ -552,7 +563,6 @@ where
         let mut converged = vec![false; n];
 
         for _ in 0..max_iterations {
-            let mut all_converged = true;
             let mut i = 0;
 
             while i < n {
@@ -574,7 +584,6 @@ where
                         converged[i + 1] = true;
                         i += 2;
                     } else {
-                        all_converged = false;
                         i += 1;
                     }
                 } else {
@@ -585,8 +594,6 @@ where
 
                     if norm <= tolerance {
                         converged[i] = true;
-                    } else {
-                        all_converged = false;
                     }
                     i += 1;
                 }
