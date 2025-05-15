@@ -1,3 +1,4 @@
+use crate::error::Error;
 use num::Float;
 
 pub fn halves_method<T, F>(f: F, x_range: (T, T), accuracy: T) -> T
@@ -47,7 +48,7 @@ where
     }
 }
 
-pub fn iterations_method<T, F>(phi: F, x_approximate: T, accuracy: T) -> T
+pub fn iterations_method<T, F>(phi: F, x_approximate: T, accuracy: T) -> Result<T, Error>
 where
     T: Float,
     F: Fn(T) -> T,
@@ -56,8 +57,11 @@ where
     loop {
         let t = x;
         x = phi(x);
+        if x > T::one() {
+            break Err(Error::MethodDoesNotConverge);
+        }
         if (x - t).abs() < accuracy {
-            break x;
+            break Ok(x);
         }
     }
 }

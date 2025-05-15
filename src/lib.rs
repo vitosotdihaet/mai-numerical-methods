@@ -265,7 +265,8 @@ mod labs {
         );
 
         let phi = |x: f64| ((x.sin() + 0.5) / 2.).sqrt();
-        let x_iterations = iterations_method(phi, 0.5, accuracy);
+        let x_iterations =
+            iterations_method(phi, 0.5, accuracy).expect("iterations method did not converge");
         assert!(
             f(x_iterations).abs() <= accuracy * 2.,
             "x = {x_iterations}, f(x) = {} != 0",
