@@ -2,7 +2,12 @@
 
 # Запуск
 ```
-cargo test -- --test-threads=1
+make test
+```
+
+Для вывода графов:
+```
+make test-plot
 ```
 
 # 1.1
