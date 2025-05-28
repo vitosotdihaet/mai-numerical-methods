@@ -159,3 +159,135 @@ pub mod systems {
         }
     }
 }
+pub mod differential {
+    use num::Float;
+
+    pub fn eulers_method<T, F>(f: F, x_range: (T, T), mut y: Vec<T>, step: T) -> Vec<(T, Vec<T>)>
+    where
+        T: Float,
+        F: Fn(T, &Vec<T>) -> Vec<T>,
+    {
+        let (l, r) = x_range;
+        let steps = ((r - l) / step).to_usize().unwrap();
+        let mut out = Vec::with_capacity(steps + 1);
+        let mut x = l;
+        out.push((x, y.clone()));
+        for _ in 0..steps {
+            let dy = f(x, &y);
+            y = y
+                .iter()
+                .zip(&dy)
+                .map(|(&yi, &dyi)| yi + dyi * step)
+                .collect();
+            x = x + step;
+            out.push((x, y.clone()));
+        }
+        out
+    }
+
+    pub fn runge_kutta<T, F>(f: F, x_range: (T, T), mut y: Vec<T>, step: T) -> Vec<(T, Vec<T>)>
+    where
+        T: Float,
+        F: Fn(T, &Vec<T>) -> Vec<T>,
+    {
+        let (l, r) = x_range;
+        let steps = ((r - l) / step).to_usize().unwrap();
+        let mut out = Vec::with_capacity(steps + 1);
+        let mut x = l;
+        out.push((x, y.clone()));
+        for _ in 0..steps {
+            let k1 = f(x, &y);
+            let y2 = y
+                .iter()
+                .zip(&k1)
+                .map(|(&yi, &k1i)| yi + k1i * (step / T::from(2.).unwrap()))
+                .collect();
+            let k2 = f(x + step / T::from(2.).unwrap(), &y2);
+            let y3 = y
+                .iter()
+                .zip(&k2)
+                .map(|(&yi, &k2i)| yi + k2i * (step / T::from(2.).unwrap()))
+                .collect();
+            let k3 = f(x + step / T::from(2.).unwrap(), &y3);
+            let y4 = y
+                .iter()
+                .zip(&k3)
+                .map(|(&yi, &k3i)| yi + k3i * step)
+                .collect();
+            let k4 = f(x + step, &y4);
+
+            y = y
+                .iter()
+                .zip(&k1)
+                .zip(&k2)
+                .zip(&k3)
+                .zip(&k4)
+                .map(|((((&yi, &k1i), &k2i), &k3i), &k4i)| {
+                    yi + (k1i + T::from(2.).unwrap() * k2i + T::from(2.).unwrap() * k3i + k4i)
+                        * (step / T::from(6.).unwrap())
+                })
+                .collect();
+
+            x = x + step;
+            out.push((x, y.clone()));
+        }
+        out
+    }
+
+    pub fn adams_method<F, T>(f: F, x_range: (T, T), y0: Vec<T>, step: T) -> Vec<(T, Vec<T>)>
+    where
+        T: Float,
+        F: Fn(T, &Vec<T>) -> Vec<T> + Copy,
+    {
+        let (l, r) = x_range;
+        let steps = ((r - l) / step).to_usize().unwrap();
+        let mut out = Vec::with_capacity(steps + 1);
+        let x0 = l;
+
+        if steps < 4 {
+            return runge_kutta(f, x_range, y0, step);
+        }
+
+        let rk_end = x0 + step * T::from(3).unwrap();
+        let rk_solution = runge_kutta(f, (x0, rk_end), y0, step);
+
+        for (x, y) in rk_solution {
+            out.push((x, y));
+        }
+
+        for i in 4..=steps {
+            let x = x0 + step * T::from(i).unwrap();
+
+            let y_n = &out[i - 1].1;
+            let y_n1 = &out[i - 2].1;
+            let y_n2 = &out[i - 3].1;
+            let y_n3 = &out[i - 4].1;
+
+            let f_n = f(out[i - 1].0, y_n);
+            let f_n1 = f(out[i - 2].0, y_n1);
+            let f_n2 = f(out[i - 3].0, y_n2);
+            let f_n3 = f(out[i - 4].0, y_n3);
+
+            let next_y: Vec<T> = y_n
+                .iter()
+                .zip(&f_n)
+                .zip(&f_n1)
+                .zip(&f_n2)
+                .zip(&f_n3)
+                .map(|((((&y_val, &f_val), &f_val1), &f_val2), &f_val3)| {
+                    let c24 = T::from(24.0).unwrap();
+                    let c55 = T::from(55.0).unwrap();
+                    let c59 = T::from(59.0).unwrap();
+                    let c37 = T::from(37.0).unwrap();
+                    let c9 = T::from(9.0).unwrap();
+
+                    y_val + (step / c24) * (c55 * f_val - c59 * f_val1 + c37 * f_val2 - c9 * f_val3)
+                })
+                .collect();
+
+            out.push((x, next_y));
+        }
+
+        out
+    }
+}

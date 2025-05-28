@@ -147,7 +147,10 @@ mod labs {
     };
 
     use crate::{
-        equation::{halves_method, iterations_method, newtons_method, systems},
+        equation::{
+            differential::{adams_method, eulers_method, runge_kutta},
+            halves_method, iterations_method, newtons_method, systems,
+        },
         function_approximation::{
             first_derivative, integral_rectangle, integral_runge_romberg, integral_simpson,
             integral_trapezoid, lagranges, least_squares_method, newtons, second_derivative,
@@ -527,5 +530,73 @@ mod labs {
         println!("{h1:.7} | {ip1:.7} | {it1:.7} | {is1:.7}");
         println!("{h2:.7} | {ip2:.7} | {it2:.7} | {is2:.7}");
         println!("runge     | {iprr:.7} | {itrr:.7} | {isrr:.7}");
+    }
+
+    #[test]
+    fn lab_4_1() {
+        let f = |x: f64, y: &Vec<f64>| vec![y[1], -y[1] * x.tan() - y[0] * x.cos().powi(2)];
+        let y_true = |x: f64| x.sin().cos() + x.cos().sin();
+        let x_range = (0.0, 1.0);
+        let y0 = vec![y_true(x_range.0), 0.];
+        let h = 0.1;
+
+        println!();
+        let mut e = 0.;
+        let sol = eulers_method(f, x_range, y0.clone(), h);
+        for (x, y_vec) in &sol[1..] {
+            let y = y_vec[0];
+            let exact = y_true(*x);
+            e += (y - exact).abs();
+        }
+        println!("euler error: {e:.4}");
+
+        let mut e = 0.;
+        let sol = runge_kutta(f, x_range, y0.clone(), h);
+        for (x, y_vec) in sol {
+            let y = y_vec[0];
+            let exact = (x.sin()).cos() + (x.cos()).sin();
+            e += (y - exact).abs();
+        }
+        println!("runge-kutta error: {e:.4}");
+
+        let mut e = 0.;
+        let sol = adams_method(f, x_range, y0.clone(), h);
+        for (x, y_vec) in sol {
+            let y = y_vec[0];
+            let exact = (x.sin()).cos() + (x.cos()).sin();
+            e += (y - exact).abs();
+        }
+        println!("adams error: {e:.4}");
+    }
+
+    #[test]
+    fn lab_4_2() {
+        let ode =
+            |x: f64, y: &Vec<f64>| vec![y[1], ((2.0 * x + 1.0) * y[1] - (x + 1.0) * y[0]) / x];
+        let shoot = |a: f64| {
+            let x_range = (1.0, 2.0);
+            let h = 0.1;
+            let y0 = vec![a, 3.0 * f64::exp(1.0)];
+            let sol = runge_kutta(ode, x_range, y0, h);
+            let last = &sol.last().unwrap().1;
+            last[1] - 2.0 * last[0]
+        };
+        let a0 = f64::exp(1.0);
+        let accuracy = 1e-3;
+
+        let a = newtons_method(shoot, a0, accuracy);
+        let x_range = (1.0, 2.0);
+        let h = 0.1;
+        let y0 = vec![a, 3.0 * f64::exp(1.0)];
+
+        let sol = runge_kutta(ode, x_range, y0, h);
+        for (x, y_vec) in sol {
+            let y = y_vec[0];
+            let exact = x.exp() * x * x;
+            assert!(
+                (y - exact).abs() < accuracy * 2.,
+                "lab_4_2: at x={x:.2}, y_num={y:.5}, y_exact={exact:.5}"
+            );
+        }
     }
 }
