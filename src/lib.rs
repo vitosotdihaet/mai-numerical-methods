@@ -546,38 +546,37 @@ mod labs {
         for (x, y_vec) in &sol[1..] {
             let y = y_vec[0];
             let exact = y_true(*x);
-            e += (y - exact).abs();
+            e += (y - exact).powi(2);
         }
-        println!("euler error: {e:.4}");
+        println!("euler error: {:.4}", e.sqrt());
 
         let mut e = 0.;
         let sol = runge_kutta(f, x_range, y0.clone(), h);
         for (x, y_vec) in sol {
             let y = y_vec[0];
             let exact = (x.sin()).cos() + (x.cos()).sin();
-            e += (y - exact).abs();
+            e += (y - exact).powi(2);
         }
-        println!("runge-kutta error: {e:.4}");
+        println!("runge-kutta error: {:.4}", e.sqrt());
 
         let mut e = 0.;
         let sol = adams_method(f, x_range, y0.clone(), h);
         for (x, y_vec) in sol {
             let y = y_vec[0];
             let exact = (x.sin()).cos() + (x.cos()).sin();
-            e += (y - exact).abs();
+            e += (y - exact).powi(2);
         }
-        println!("adams error: {e:.4}");
+        println!("adams error: {:.4}", e.sqrt());
     }
 
     #[test]
     fn lab_4_2() {
-        let ode =
-            |x: f64, y: &Vec<f64>| vec![y[1], ((2.0 * x + 1.0) * y[1] - (x + 1.0) * y[0]) / x];
+        let f = |x: f64, y: &Vec<f64>| vec![y[1], ((2.0 * x + 1.0) * y[1] - (x + 1.0) * y[0]) / x];
         let shoot = |a: f64| {
             let x_range = (1.0, 2.0);
             let h = 0.1;
             let y0 = vec![a, 3.0 * f64::exp(1.0)];
-            let sol = runge_kutta(ode, x_range, y0, h);
+            let sol = runge_kutta(f, x_range, y0, h);
             let last = &sol.last().unwrap().1;
             last[1] - 2.0 * last[0]
         };
@@ -589,12 +588,12 @@ mod labs {
         let h = 0.1;
         let y0 = vec![a, 3.0 * f64::exp(1.0)];
 
-        let sol = runge_kutta(ode, x_range, y0, h);
+        let sol = runge_kutta(f, x_range, y0, h);
         for (x, y_vec) in sol {
             let y = y_vec[0];
             let exact = x.exp() * x * x;
             assert!(
-                (y - exact).abs() < accuracy * 2.,
+                (y - exact).powi(2) < accuracy * 2.,
                 "lab_4_2: at x={x:.2}, y_num={y:.5}, y_exact={exact:.5}"
             );
         }
