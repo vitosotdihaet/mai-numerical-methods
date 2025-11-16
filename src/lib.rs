@@ -4,6 +4,13 @@ pub mod function_approximation;
 pub mod matrix;
 
 #[cfg(test)]
+const GRAPH_WIDTH: u32 = 900;
+#[cfg(test)]
+const GRAPH_HEIGHT: u32 = 600;
+#[cfg(test)]
+const GRAPH_SIZE: (u32, u32) = (GRAPH_WIDTH, GRAPH_HEIGHT);
+
+#[cfg(test)]
 mod tests {
     use crate::matrix::Matrix;
 
@@ -148,7 +155,10 @@ mod labs {
 
     use crate::{
         equation::{
-            differential::{adams_method, eulers_method, runge_kutta},
+            differential::{
+                adams_method, eulers_method, explicit_finite_difference_scheme,
+                implicit_finite_difference_scheme, runge_kutta,
+            },
             halves_method, iterations_method, newtons_method, systems,
         },
         function_approximation::{
@@ -156,6 +166,7 @@ mod labs {
             integral_trapezoid, lagranges, least_squares_method, newtons, second_derivative,
         },
         matrix::Matrix,
+        GRAPH_SIZE,
     };
 
     #[cfg(feature = "plot_tests")]
@@ -391,7 +402,7 @@ mod labs {
             .collect();
 
         let path = "plots/lab3.3.png";
-        let root = BitMapBackend::new(path, (640, 480)).into_drawing_area();
+        let root = BitMapBackend::new(path, GRAPH_SIZE).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let mut chart = ChartBuilder::on(&root)
             .caption("lab 3.3 - least squares method", ("sans-serif", 24))
@@ -425,6 +436,8 @@ mod labs {
                 },
             ))
             .unwrap();
+
+        root.present().unwrap();
 
         open_plot(path);
     }
@@ -463,7 +476,7 @@ mod labs {
 
         let step = 0.01;
         let path = "plots/lab3.4.png";
-        let root = BitMapBackend::new(path, (640, 480)).into_drawing_area();
+        let root = BitMapBackend::new(path, GRAPH_SIZE).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let mut chart = ChartBuilder::on(&root)
             .caption("lab 3.4 - derivatives", ("sans-serif", 24))
@@ -505,6 +518,8 @@ mod labs {
                 },
             ))
             .unwrap();
+
+        root.present().unwrap();
 
         open_plot(path);
     }
@@ -596,6 +611,162 @@ mod labs {
                 (y - exact).powi(2) < accuracy * 2.,
                 "lab_4_2: at x={x:.2}, y_num={y:.5}, y_exact={exact:.5}"
             );
+        }
+    }
+
+    fn lab_5_get_err<T>(
+        x_step: T,
+        t: T,
+        solution: &Vec<T>,
+        analytical: impl Fn(T, T) -> T,
+    ) -> (T, T)
+    where
+        T: num::Float,
+    {
+        let nx = solution.len();
+        let mut l2 = T::zero();
+        let mut max_err = T::zero();
+        for j in 0..nx {
+            let x = T::from(j).unwrap() * x_step;
+
+            let numerical = solution[j];
+            let exact = analytical(x, t);
+
+            let diff = (numerical - exact).abs();
+            l2 = l2 + diff * diff;
+            if diff > max_err {
+                max_err = diff;
+            }
+        }
+        l2 = (l2 / T::from(nx).unwrap()).sqrt();
+        (l2, max_err)
+    }
+
+    #[cfg(feature = "plot_tests")]
+    fn generate_colors(base1: RGBColor, base2: RGBColor, n: usize) -> Vec<RGBColor> {
+        (0..n)
+            .map(|i| {
+                let t = i as f64 / (n as f64 - 1.0).max(1.0);
+                RGBColor(
+                    (base1.0 as f64 * (1.0 - t) + base2.0 as f64 * t) as u8,
+                    (base1.1 as f64 * (1.0 - t) + base2.1 as f64 * t) as u8,
+                    (base1.2 as f64 * (1.0 - t) + base2.2 as f64 * t) as u8,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lab_5() {
+        println!("");
+        // важно, чтобы a^2 * t_step / x_step^2 <= 1/2, иначе схема не устойчива
+        let a = 0.5_f64;
+        let b = 1.5_f64;
+        let c = -1_f64;
+
+        let max_x = 1.0_f64;
+        let max_t = 0.5_f64;
+
+        let x_step = 0.02_f64;
+        let t_step = 0.00005_f64;
+
+        let ts = vec![max_t / 2., max_t];
+
+        let analytical = |x: f64, t: f64| ((c - a) * t).exp() * (x + b * t).sin();
+
+        let phi0 = |t: f64| analytical(0., t);
+        let phi1 = |t: f64| analytical(max_x, t);
+        let psi = |x: f64| analytical(x, 0.);
+
+        let explicit =
+            explicit_finite_difference_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
+
+        let implicit =
+            implicit_finite_difference_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
+
+        for &t in &ts {
+            let idx = (t / t_step).round() as usize;
+
+            let explicit_slice = &explicit[idx];
+            let implicit_slice = &implicit[idx];
+
+            let (l2_exp, max_exp) = lab_5_get_err(x_step, t, explicit_slice, analytical);
+            println!("EFDS t = {t:.3}: L2 error = {l2_exp:.3}, max error = {max_exp:.3}");
+
+            let (l2_imp, max_imp) = lab_5_get_err(x_step, t, implicit_slice, analytical);
+            println!("IFDS t = {t:.3}: L2 error = {l2_imp:.3}, max error = {max_imp:.3}");
+        }
+
+        #[cfg(feature = "plot_tests")]
+        {
+            let render_t_step = 0.05f64;
+            let ts = (0..(max_t / render_t_step) as usize)
+                .map(|t| t as f64 * render_t_step)
+                .collect::<Vec<_>>();
+            let path = "plots/lab5.gif";
+            let root = BitMapBackend::gif(path, GRAPH_SIZE, (5_000f64 * render_t_step) as u32)
+                .unwrap()
+                .into_drawing_area();
+            root.fill(&WHITE).unwrap();
+
+            let analytical_colors =
+                generate_colors(RGBColor(100, 100, 100), RGBColor(150, 150, 150), ts.len());
+            let explicit_colors = generate_colors(GREEN, RGBColor(0, 200, 100), ts.len());
+            let implicit_colors = generate_colors(RED, RGBColor(200, 0, 100), ts.len());
+
+            for (i, &t) in ts.iter().enumerate() {
+                let idx = (t / t_step).round() as usize;
+
+                root.fill(&WHITE).unwrap();
+                let mut chart = ChartBuilder::on(&root)
+                    .caption("lab 5: finite-difference schemes", ("sans-serif", 24))
+                    .margin(10)
+                    .x_label_area_size(30)
+                    .y_label_area_size(30)
+                    .set_left_and_bottom_label_area_size(20)
+                    .build_cartesian_2d(-0.25f64..max_x + 0.25, -0.25f64..1.0f64)
+                    .unwrap();
+
+                chart.configure_mesh().draw().unwrap();
+
+                let color = analytical_colors[i].clone();
+                chart
+                    .draw_series(LineSeries::new(
+                        (0..=(max_x * 10_000.) as usize)
+                            .map(|j| j as f64 / 10_000.)
+                            .map(|x| (x, analytical(x, t))),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label(format!("Analytical t={:.3}", t))
+                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+
+                let color = explicit_colors[i].clone();
+                let explicit_slice = &explicit[idx];
+                chart
+                    .draw_series(LineSeries::new(
+                        (0..explicit_slice.len()).map(|j| (j as f64 * x_step, explicit_slice[j])),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label(format!("Explicit FDS t={:.3}", t))
+                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+
+                let color = implicit_colors[i].clone();
+                let implicit_slice = &implicit[idx];
+                chart
+                    .draw_series(LineSeries::new(
+                        (0..implicit_slice.len()).map(|j| (j as f64 * x_step, implicit_slice[j])),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label(format!("Implicit FDS t={:.3}", t))
+                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                chart.configure_series_labels().draw().unwrap();
+                root.present().unwrap();
+            }
+
+            open_plot(path);
         }
     }
 }

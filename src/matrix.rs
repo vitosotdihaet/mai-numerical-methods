@@ -31,6 +31,12 @@ where
         Self { values }
     }
 
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(n),
+        }
+    }
+
     pub fn column(values: &[T]) -> Self {
         let n = values.len();
         let mut v: Vec<Vec<T>> = Vec::with_capacity(values.len());

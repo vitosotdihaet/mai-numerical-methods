@@ -159,8 +159,11 @@ pub mod systems {
         }
     }
 }
+
 pub mod differential {
     use num::Float;
+
+    use crate::matrix::Matrix;
 
     pub fn eulers_method<T, F>(f: F, x_range: (T, T), mut y: Vec<T>, step: T) -> Vec<(T, Vec<T>)>
     where
@@ -289,5 +292,149 @@ pub mod differential {
         }
 
         out
+    }
+
+    pub fn explicit_finite_difference_scheme<T, F1, F2, F3>(
+        phi0: F1,
+        phi1: F2,
+        psi: F3,
+        a: T,
+        t_step: T,
+        max_t: T,
+        x_step: T,
+        max_x: T,
+    ) -> Vec<Vec<T>>
+    where
+        T: Float,
+        F1: Fn(T) -> T,
+        F2: Fn(T) -> T,
+        F3: Fn(T) -> T,
+    {
+        let zero = T::zero();
+        let one = T::one();
+        let two = T::from(2.0).unwrap();
+
+        let nx = (max_x / x_step).to_usize().unwrap() + 1;
+        let nt = (max_t / t_step).to_usize().unwrap() + 1;
+        let mut xs = vec![zero; nx];
+        for (i, x) in xs.iter_mut().enumerate() {
+            *x = x_step * T::from(i).unwrap();
+        }
+        let mut ts = vec![zero; nt];
+        for (i, t) in ts.iter_mut().enumerate() {
+            *t = t_step * T::from(i).unwrap();
+        }
+
+        let sigma = (a * a) * t_step / (x_step * x_step);
+
+        // grid: u[t][x]
+        let mut u = vec![vec![zero; nx]; nt];
+
+        // задаём начальное условие u(x,0) = psi(x)
+        for (j, x) in xs.iter().enumerate() {
+            u[0][j] = psi(*x);
+        }
+
+        u[0][0] = phi0(zero);
+        u[0][nx - 1] = phi1(zero);
+
+        // центральная разность для u_x: (u_{j+1} - u_{j-1})/(2h)
+        // в явной схеме проходим по внутренним узлам j = 1..nx-2
+        for k in 0..(nt - 1) {
+            let t_next = ts[k + 1];
+
+            u[k + 1][0] = phi0(t_next);
+            u[k + 1][nx - 1] = phi1(t_next);
+
+            for j in 1..(nx - 1) {
+                u[k + 1][j] =
+                    sigma * u[k][j + 1] + (one - two * sigma) * u[k][j] + sigma * u[k][j - 1];
+            }
+        }
+
+        u
+    }
+
+    pub fn implicit_finite_difference_scheme<T, F1, F2, F3>(
+        phi0: F1,
+        phi1: F2,
+        psi: F3,
+        a: T,
+        t_step: T,
+        max_t: T,
+        x_step: T,
+        max_x: T,
+    ) -> Vec<Vec<T>>
+    where
+        T: Float,
+        F1: Fn(T) -> T,
+        F2: Fn(T) -> T,
+        F3: Fn(T) -> T,
+    {
+        let zero = T::zero();
+        let one = T::one();
+        let two = T::from(2.0).unwrap();
+
+        let nx = (max_x / x_step).to_usize().unwrap() + 1;
+        let nt = (max_t / t_step).to_usize().unwrap() + 1;
+        let mut xs = vec![zero; nx];
+        for (i, x) in xs.iter_mut().enumerate() {
+            *x = x_step * T::from(i).unwrap();
+        }
+        let mut ts = vec![zero; nt];
+        for (i, t) in ts.iter_mut().enumerate() {
+            *t = t_step * T::from(i).unwrap();
+        }
+
+        let sigma = (a * a) * t_step / (x_step * x_step);
+
+        // grid: u[t][x]
+        let mut u = vec![vec![zero; nx]; 1];
+
+        // задаём начальное условие u(x,0) = psi(x)
+        for (j, x) in xs.iter().enumerate() {
+            u[0][j] = psi(*x);
+        }
+
+        u[0][0] = phi0(zero);
+        u[0][nx - 1] = phi1(zero);
+
+        // коэффициенты метода прогонки
+        let aj = -sigma;
+        let bj = one + two * sigma;
+        let cj = -sigma;
+
+        for k in 0..(nt - 1) {
+            let t_next = ts[k + 1];
+
+            let mut m = Matrix::with_capacity(nx);
+            let mut d = Matrix::column(&u[k]);
+            d[0][0] = d[0][0] + sigma * phi0(t_next);
+            d[nx - 1][0] = d[nx - 1][0] + sigma * phi1(t_next);
+
+            let mut row = vec![zero; nx];
+            row[0] = bj;
+            row[1] = cj;
+            m.push(row);
+
+            for j in 1..(nx - 1) {
+                let mut row = vec![zero; nx];
+                row[j - 1] = aj;
+                row[j] = bj;
+                row[j + 1] = cj;
+                m.push(row);
+            }
+
+            let mut row = vec![zero; nx];
+            row[nx - 2] = aj;
+            row[nx - 1] = bj;
+            m.push(row);
+
+            u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+            u[k + 1][0] = phi0(t_next);
+            u[k + 1][nx - 1] = phi1(t_next);
+        }
+
+        u
     }
 }
