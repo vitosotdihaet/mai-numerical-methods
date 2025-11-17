@@ -437,4 +437,105 @@ pub mod differential {
 
         u
     }
+
+    pub fn crank_nicolsons_scheme<T, F1, F2, F3>(
+        phi0: F1,
+        phi1: F2,
+        psi: F3,
+        a: T,
+        t_step: T,
+        max_t: T,
+        x_step: T,
+        max_x: T,
+        theta: T,
+    ) -> Vec<Vec<T>>
+    where
+        T: Float,
+        F1: Fn(T) -> T,
+        F2: Fn(T) -> T,
+        F3: Fn(T) -> T,
+    {
+        let zero = T::zero();
+        let one = T::one();
+        let two = T::from(2.0).unwrap();
+
+        let nx = (max_x / x_step).to_usize().unwrap() + 1;
+        let nt = (max_t / t_step).to_usize().unwrap() + 1;
+        let mut xs = vec![zero; nx];
+        for (i, x) in xs.iter_mut().enumerate() {
+            *x = x_step * T::from(i).unwrap();
+        }
+        let mut ts = vec![zero; nt];
+        for (i, t) in ts.iter_mut().enumerate() {
+            *t = t_step * T::from(i).unwrap();
+        }
+
+        let sigma = (a * a) * t_step / (x_step * x_step);
+
+        // grid: u[t][x]
+        let mut u = vec![vec![zero; nx]; nt];
+
+        // задаём начальное условие u(x,0) = psi(x)
+        for (j, x) in xs.iter().enumerate() {
+            u[0][j] = psi(*x);
+        }
+
+        u[0][0] = phi0(zero);
+        u[0][nx - 1] = phi1(zero);
+
+        // коэффициенты метода прогонки для Crank-Nicolson
+        let aj = -sigma * theta;
+        let bj = one + two * sigma * theta;
+        let cj = -sigma * theta;
+
+        for k in 0..(nt - 1) {
+            let t_next = ts[k + 1];
+
+            let mut m = Matrix::with_capacity(nx - 2);
+            let mut d = Vec::with_capacity(nx - 2);
+
+            // строим правую часть для внутренних точек
+            for j in 1..(nx - 1) {
+                let explicit_part =
+                    (one - theta) * sigma * (u[k][j - 1] - two * u[k][j] + u[k][j + 1]);
+                d.push(u[k][j] + explicit_part);
+            }
+
+            // учитываем граничные условия в правой части
+            d[0] = d[0] + sigma * theta * phi0(t_next);
+            d[nx - 3] = d[nx - 3] + sigma * theta * phi1(t_next);
+
+            // строим трёхдиагональную матрицу
+            let mut first_row = vec![zero; nx - 2];
+            first_row[0] = bj;
+            first_row[1] = cj;
+            m.push(first_row);
+
+            for j in 1..(nx - 3) {
+                let mut row = vec![zero; nx - 2];
+                row[j - 1] = aj;
+                row[j] = bj;
+                row[j + 1] = cj;
+                m.push(row);
+            }
+
+            let mut last_row = vec![zero; nx - 2];
+            last_row[nx - 4] = aj;
+            last_row[nx - 3] = bj;
+            m.push(last_row);
+
+            // решаем систему
+            let d_matrix = Matrix::column(&d);
+            let sol = m.solve_tridiagonal(&d_matrix).transposed().swap_remove(0);
+
+            // устанавливаем граничные условия и решение для внутренних точек
+            u[k + 1][0] = phi0(t_next);
+            u[k + 1][nx - 1] = phi1(t_next);
+            for j in 1..(nx - 1) {
+                u[k + 1][j] = sol[j - 1];
+            }
+        }
+
+        u
+    }
 }

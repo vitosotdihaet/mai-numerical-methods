@@ -4,9 +4,9 @@ pub mod function_approximation;
 pub mod matrix;
 
 #[cfg(test)]
-const GRAPH_WIDTH: u32 = 900;
+const GRAPH_WIDTH: u32 = 720;
 #[cfg(test)]
-const GRAPH_HEIGHT: u32 = 600;
+const GRAPH_HEIGHT: u32 = 480;
 #[cfg(test)]
 const GRAPH_SIZE: (u32, u32) = (GRAPH_WIDTH, GRAPH_HEIGHT);
 
@@ -156,8 +156,8 @@ mod labs {
     use crate::{
         equation::{
             differential::{
-                adams_method, eulers_method, explicit_finite_difference_scheme,
-                implicit_finite_difference_scheme, runge_kutta,
+                adams_method, crank_nicolsons_scheme, eulers_method,
+                explicit_finite_difference_scheme, implicit_finite_difference_scheme, runge_kutta,
             },
             halves_method, iterations_method, newtons_method, systems,
         },
@@ -642,33 +642,21 @@ mod labs {
         (l2, max_err)
     }
 
-    #[cfg(feature = "plot_tests")]
-    fn generate_colors(base1: RGBColor, base2: RGBColor, n: usize) -> Vec<RGBColor> {
-        (0..n)
-            .map(|i| {
-                let t = i as f64 / (n as f64 - 1.0).max(1.0);
-                RGBColor(
-                    (base1.0 as f64 * (1.0 - t) + base2.0 as f64 * t) as u8,
-                    (base1.1 as f64 * (1.0 - t) + base2.1 as f64 * t) as u8,
-                    (base1.2 as f64 * (1.0 - t) + base2.2 as f64 * t) as u8,
-                )
-            })
-            .collect()
-    }
-
     #[test]
     fn lab_5() {
         println!("");
-        // важно, чтобы a^2 * t_step / x_step^2 <= 1/2, иначе схема не устойчива
-        let a = 0.5_f64;
+        // важно, чтобы a^2 * t_step / x_step^2 <= 1/2, иначе яваня схема не устойчива
+        let a = 1.5_f64;
         let b = 1.5_f64;
-        let c = -1_f64;
+        let c = -1.5_f64;
 
         let max_x = 1.0_f64;
         let max_t = 0.5_f64;
 
         let x_step = 0.02_f64;
         let t_step = 0.00005_f64;
+
+        let theta = 0.1;
 
         let ts = vec![max_t / 2., max_t];
 
@@ -684,17 +672,22 @@ mod labs {
         let implicit =
             implicit_finite_difference_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
 
+        let crank_nicolsons =
+            crank_nicolsons_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x, theta);
+
         for &t in &ts {
             let idx = (t / t_step).round() as usize;
 
             let explicit_slice = &explicit[idx];
             let implicit_slice = &implicit[idx];
+            let crank_nicolsons_slice = &crank_nicolsons[idx];
 
-            let (l2_exp, max_exp) = lab_5_get_err(x_step, t, explicit_slice, analytical);
-            println!("EFDS t = {t:.3}: L2 error = {l2_exp:.3}, max error = {max_exp:.3}");
-
-            let (l2_imp, max_imp) = lab_5_get_err(x_step, t, implicit_slice, analytical);
-            println!("IFDS t = {t:.3}: L2 error = {l2_imp:.3}, max error = {max_imp:.3}");
+            let (l2, max) = lab_5_get_err(x_step, t, explicit_slice, analytical);
+            println!("EFDS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+            let (l2, max) = lab_5_get_err(x_step, t, implicit_slice, analytical);
+            println!("IFDS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+            let (l2, max) = lab_5_get_err(x_step, t, crank_nicolsons_slice, analytical);
+            println!("CNS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
         }
 
         #[cfg(feature = "plot_tests")]
@@ -709,17 +702,15 @@ mod labs {
                 .into_drawing_area();
             root.fill(&WHITE).unwrap();
 
-            let analytical_colors =
-                generate_colors(RGBColor(100, 100, 100), RGBColor(150, 150, 150), ts.len());
-            let explicit_colors = generate_colors(GREEN, RGBColor(0, 200, 100), ts.len());
-            let implicit_colors = generate_colors(RED, RGBColor(200, 0, 100), ts.len());
-
-            for (i, &t) in ts.iter().enumerate() {
+            for t in ts {
                 let idx = (t / t_step).round() as usize;
 
                 root.fill(&WHITE).unwrap();
                 let mut chart = ChartBuilder::on(&root)
-                    .caption("lab 5: finite-difference schemes", ("sans-serif", 24))
+                    .caption(
+                        format!("lab 5: finite-difference schemes, t={t:.3}"),
+                        ("sans-serif", 24),
+                    )
                     .margin(10)
                     .x_label_area_size(30)
                     .y_label_area_size(30)
@@ -729,7 +720,7 @@ mod labs {
 
                 chart.configure_mesh().draw().unwrap();
 
-                let color = analytical_colors[i].clone();
+                let color = RGBColor(100, 100, 100);
                 chart
                     .draw_series(LineSeries::new(
                         (0..=(max_x * 10_000.) as usize)
@@ -738,10 +729,10 @@ mod labs {
                         &color,
                     ))
                     .unwrap()
-                    .label(format!("Analytical t={:.3}", t))
+                    .label("Analytical")
                     .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
 
-                let color = explicit_colors[i].clone();
+                let color = GREEN;
                 let explicit_slice = &explicit[idx];
                 chart
                     .draw_series(LineSeries::new(
@@ -749,10 +740,10 @@ mod labs {
                         &color,
                     ))
                     .unwrap()
-                    .label(format!("Explicit FDS t={:.3}", t))
+                    .label("Explicit FDS")
                     .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
 
-                let color = implicit_colors[i].clone();
+                let color = RED;
                 let implicit_slice = &implicit[idx];
                 chart
                     .draw_series(LineSeries::new(
@@ -760,8 +751,21 @@ mod labs {
                         &color,
                     ))
                     .unwrap()
-                    .label(format!("Implicit FDS t={:.3}", t))
+                    .label("Implicit FDS")
                     .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+
+                let color = BLUE;
+                let crank_nicolsons_slice = &crank_nicolsons[idx];
+                chart
+                    .draw_series(LineSeries::new(
+                        (0..crank_nicolsons_slice.len())
+                            .map(|j| (j as f64 * x_step, crank_nicolsons_slice[j])),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label("Crank Nicolson's Scheme")
+                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+
                 chart.configure_series_labels().draw().unwrap();
                 root.present().unwrap();
             }
