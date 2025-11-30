@@ -144,21 +144,19 @@ mod lab_tests {
 
 #[cfg(test)]
 mod labs {
+    use std::f64::consts::PI;
     #[cfg(feature = "plot_tests")]
     use std::process::Command;
 
     use num::{complex::ComplexFloat, Complex};
     use plotters::{
         prelude::*,
-        style::full_palette::{ORANGE, PURPLE},
+        style::full_palette::{ORANGE, PURPLE, TEAL},
     };
 
     use crate::{
         equation::{
-            differential::{
-                adams_method, crank_nicolsons_scheme, eulers_method,
-                explicit_finite_difference_scheme, implicit_finite_difference_scheme, runge_kutta,
-            },
+            differential::{adams_method, dirichlet, eulers_method, robin, runge_kutta},
             halves_method, iterations_method, newtons_method, systems,
         },
         function_approximation::{
@@ -647,47 +645,60 @@ mod labs {
         println!("");
         // важно, чтобы a^2 * t_step / x_step^2 <= 1/2, иначе яваня схема не устойчива
         let a = 1.5_f64;
-        let b = 1.5_f64;
-        let c = -1.5_f64;
+        let b = 0.5_f64;
+        let c = -1.0_f64;
 
-        let max_x = 1.0_f64;
-        let max_t = 0.5_f64;
+        let max_x = 3.1415_f64;
+        let max_t = 1.0_f64;
 
-        let x_step = 0.02_f64;
-        let t_step = 0.00005_f64;
+        let x_step = 0.2_f64;
+        let t_step = 0.0005_f64;
 
-        let theta = 0.1;
+        let theta = 0.5;
 
         let ts = vec![max_t / 2., max_t];
 
         let analytical = |x: f64, t: f64| ((c - a) * t).exp() * (x + b * t).sin();
 
+        let phi0 = |t: f64| ((c - a) * t).exp() * ((b * t).cos() + (b * t).sin());
+        let phi1 = |t: f64| -((c - a) * t).exp() * ((b * t).cos() + (b * t).sin());
+        let psi = |x: f64| x.sin();
+
+        let mut solutions = Vec::with_capacity(5);
+        let mut colors = Vec::with_capacity(5);
+        let explicit_robin = robin::pefd(
+            phi0, 1., 1., phi1, 1., 1., psi, a, t_step, max_t, x_step, max_x,
+        );
+        let implicit_robin = robin::pifd(
+            phi0, 1., 1., phi1, 1., 1., psi, a, t_step, max_t, x_step, max_x,
+        );
+
         let phi0 = |t: f64| analytical(0., t);
         let phi1 = |t: f64| analytical(max_x, t);
-        let psi = |x: f64| analytical(x, 0.);
-
-        let explicit =
-            explicit_finite_difference_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
-
-        let implicit =
-            implicit_finite_difference_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
-
+        let explicit_dirichlet = dirichlet::pefd(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
+        let implicit_dirichlet = dirichlet::pifd(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
         let crank_nicolsons =
-            crank_nicolsons_scheme(phi0, phi1, psi, a, t_step, max_t, x_step, max_x, theta);
+            dirichlet::crank_nicolsons(phi0, phi1, psi, a, t_step, max_t, x_step, max_x, theta);
 
-        for &t in &ts {
-            let idx = (t / t_step).round() as usize;
+        solutions.push(("EFDS Robin", explicit_robin));
+        solutions.push(("IFDS Robin", implicit_robin));
+        solutions.push(("EFDS Dirichlet", explicit_dirichlet));
+        solutions.push(("IFDS Dirichlet", implicit_dirichlet));
+        solutions.push(("CNS Dirichlet", crank_nicolsons));
 
-            let explicit_slice = &explicit[idx];
-            let implicit_slice = &implicit[idx];
-            let crank_nicolsons_slice = &crank_nicolsons[idx];
+        colors.push(RED);
+        colors.push(BLUE);
+        colors.push(GREEN);
+        colors.push(TEAL);
+        colors.push(PURPLE);
 
-            let (l2, max) = lab_5_get_err(x_step, t, explicit_slice, analytical);
-            println!("EFDS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
-            let (l2, max) = lab_5_get_err(x_step, t, implicit_slice, analytical);
-            println!("IFDS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
-            let (l2, max) = lab_5_get_err(x_step, t, crank_nicolsons_slice, analytical);
-            println!("CNS t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+        for (name, solution) in &solutions {
+            for &t in &ts {
+                let idx = (t / t_step).round() as usize;
+                let slice = &solution[idx];
+                let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
+                println!("{name} t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+            }
         }
 
         #[cfg(feature = "plot_tests")]
@@ -730,47 +741,37 @@ mod labs {
                     ))
                     .unwrap()
                     .label("Analytical")
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                    });
 
-                let color = GREEN;
-                let explicit_slice = &explicit[idx];
-                chart
-                    .draw_series(LineSeries::new(
-                        (0..explicit_slice.len()).map(|j| (j as f64 * x_step, explicit_slice[j])),
-                        &color,
-                    ))
-                    .unwrap()
-                    .label("Explicit FDS")
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
-
-                let color = RED;
-                let implicit_slice = &implicit[idx];
-                chart
-                    .draw_series(LineSeries::new(
-                        (0..implicit_slice.len()).map(|j| (j as f64 * x_step, implicit_slice[j])),
-                        &color,
-                    ))
-                    .unwrap()
-                    .label("Implicit FDS")
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
-
-                let color = BLUE;
-                let crank_nicolsons_slice = &crank_nicolsons[idx];
-                chart
-                    .draw_series(LineSeries::new(
-                        (0..crank_nicolsons_slice.len())
-                            .map(|j| (j as f64 * x_step, crank_nicolsons_slice[j])),
-                        &color,
-                    ))
-                    .unwrap()
-                    .label("Crank Nicolson's Scheme")
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
-
+                for ((name, solution), color) in solutions.iter().zip(&colors) {
+                    let slice = &solution[idx];
+                    chart
+                        .draw_series(LineSeries::new(
+                            (0..slice.len()).map(|j| (j as f64 * x_step, slice[j])),
+                            &color,
+                        ))
+                        .unwrap()
+                        .label(name.to_string())
+                        .legend(move |(x, y)| {
+                            PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                        });
+                }
                 chart.configure_series_labels().draw().unwrap();
                 root.present().unwrap();
             }
 
             open_plot(path);
         }
+    }
+
+    #[test]
+    fn lab_6() {
+        let a = -2.;
+        let phi0 = |t: f64| -(a * t).sin();
+        let phi1 = |t: f64| (a * t).sin();
+        let psi = |x: f64| x.sin();
+        let dpsi_dt = |x: f64| -a * x.sin();
     }
 }
