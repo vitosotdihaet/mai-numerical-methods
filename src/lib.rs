@@ -144,7 +144,6 @@ mod lab_tests {
 
 #[cfg(test)]
 mod labs {
-    use std::f64::consts::PI;
     #[cfg(feature = "plot_tests")]
     use std::process::Command;
 
@@ -156,7 +155,7 @@ mod labs {
 
     use crate::{
         equation::{
-            differential::{adams_method, dirichlet, eulers_method, robin, runge_kutta},
+            differential::{adams_method, eulers_method, robin, runge_kutta},
             halves_method, iterations_method, newtons_method, systems,
         },
         function_approximation::{
@@ -643,18 +642,15 @@ mod labs {
     #[test]
     fn lab_5() {
         println!("");
-        // важно, чтобы a^2 * t_step / x_step^2 <= 1/2, иначе яваня схема не устойчива
         let a = 1.5_f64;
         let b = 0.5_f64;
         let c = -1.0_f64;
 
-        let max_x = 3.1415_f64;
-        let max_t = 1.0_f64;
+        let max_x = std::f64::consts::PI;
+        let max_t = 1.5_f64;
 
-        let x_step = 0.2_f64;
-        let t_step = 0.0005_f64;
-
-        let theta = 0.5;
+        let x_step_count = 100;
+        let t_step_count = 100000;
 
         let ts = vec![max_t / 2., max_t];
 
@@ -664,33 +660,72 @@ mod labs {
         let phi1 = |t: f64| -((c - a) * t).exp() * ((b * t).cos() + (b * t).sin());
         let psi = |x: f64| x.sin();
 
+        let t_step = max_t / t_step_count as f64;
+        let x_step = max_x / x_step_count as f64;
+
+        assert!(t_step / (x_step * x_step) < 1. / 2.);
+
         let mut solutions = Vec::with_capacity(5);
         let mut colors = Vec::with_capacity(5);
         let explicit_robin = robin::pefd(
-            phi0, 1., 1., phi1, 1., 1., psi, a, t_step, max_t, x_step, max_x,
+            phi0,
+            1.,
+            1.,
+            phi1,
+            1.,
+            1.,
+            psi,
+            a,
+            b,
+            c,
+            t_step_count,
+            max_t,
+            x_step_count,
+            max_x,
         );
         let implicit_robin = robin::pifd(
-            phi0, 1., 1., phi1, 1., 1., psi, a, t_step, max_t, x_step, max_x,
+            phi0,
+            1.,
+            1.,
+            phi1,
+            1.,
+            1.,
+            psi,
+            a,
+            b,
+            c,
+            t_step_count,
+            max_t,
+            x_step_count,
+            max_x,
         );
-
-        let phi0 = |t: f64| analytical(0., t);
-        let phi1 = |t: f64| analytical(max_x, t);
-        let explicit_dirichlet = dirichlet::pefd(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
-        let implicit_dirichlet = dirichlet::pifd(phi0, phi1, psi, a, t_step, max_t, x_step, max_x);
-        let crank_nicolsons =
-            dirichlet::crank_nicolsons(phi0, phi1, psi, a, t_step, max_t, x_step, max_x, theta);
+        let crank_nicolsons_robin = robin::crank_nicolsons(
+            phi0,
+            1.,
+            1.,
+            phi1,
+            1.,
+            1.,
+            psi,
+            a,
+            b,
+            c,
+            t_step_count,
+            max_t,
+            x_step_count,
+            max_x,
+        );
 
         solutions.push(("EFDS Robin", explicit_robin));
         solutions.push(("IFDS Robin", implicit_robin));
-        solutions.push(("EFDS Dirichlet", explicit_dirichlet));
-        solutions.push(("IFDS Dirichlet", implicit_dirichlet));
-        solutions.push(("CNS Dirichlet", crank_nicolsons));
+        solutions.push(("CNS Robin", crank_nicolsons_robin));
 
         colors.push(RED);
         colors.push(BLUE);
         colors.push(GREEN);
         colors.push(TEAL);
         colors.push(PURPLE);
+        colors.push(ORANGE);
 
         for (name, solution) in &solutions {
             for &t in &ts {

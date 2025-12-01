@@ -243,7 +243,7 @@ where
             }
 
             if i > 0 && i < n - 1 {
-                assert!(b[i] >= a[i] + c[i]);
+                assert!(b[i].abs() >= (a[i] + c[i]).abs());
             }
         }
 
