@@ -3,11 +3,11 @@ pub mod error;
 pub mod function_approximation;
 pub mod matrix;
 
-#[cfg(test)]
+#[cfg(feature = "plot_tests")]
 const GRAPH_WIDTH: u32 = 720;
-#[cfg(test)]
+#[cfg(feature = "plot_tests")]
 const GRAPH_HEIGHT: u32 = 480;
-#[cfg(test)]
+#[cfg(feature = "plot_tests")]
 const GRAPH_SIZE: (u32, u32) = (GRAPH_WIDTH, GRAPH_HEIGHT);
 
 #[cfg(test)]
@@ -145,25 +145,34 @@ mod lab_tests {
 #[cfg(test)]
 mod labs {
     #[cfg(feature = "plot_tests")]
-    use std::process::Command;
-
-    use num::{complex::ComplexFloat, Complex};
+    use crate::GRAPH_SIZE;
+    #[cfg(feature = "plot_tests")]
     use plotters::{
         prelude::*,
         style::full_palette::{ORANGE, PURPLE, TEAL},
     };
+    #[cfg(feature = "plot_tests")]
+    use std::process::Command;
+
+    use num::{complex::ComplexFloat, Complex};
+
+    #[cfg(feature = "plot_tests")]
+    use crate::function_approximation::{
+        first_derivative, least_squares_method, second_derivative,
+    };
 
     use crate::{
         equation::{
-            differential::{adams_method, eulers_method, robin, runge_kutta},
+            differential::{
+                adams_method, eulers_method, hyperbolic::dirichlet, parabolic::robin, runge_kutta,
+            },
             halves_method, iterations_method, newtons_method, systems,
         },
         function_approximation::{
-            first_derivative, integral_rectangle, integral_runge_romberg, integral_simpson,
-            integral_trapezoid, lagranges, least_squares_method, newtons, second_derivative,
+            integral_rectangle, integral_runge_romberg, integral_simpson, integral_trapezoid,
+            lagranges, newtons,
         },
         matrix::Matrix,
-        GRAPH_SIZE,
     };
 
     #[cfg(feature = "plot_tests")]
@@ -177,9 +186,6 @@ mod labs {
         #[cfg(target_os = "linux")]
         Command::new("eog").arg(path).spawn().unwrap();
     }
-
-    #[cfg(not(feature = "plot_tests"))]
-    fn open_plot(_: &str) {}
 
     #[test]
     fn lab_1_1() {
@@ -385,6 +391,7 @@ mod labs {
         // free
     }
 
+    #[cfg(feature = "plot_tests")]
     #[test]
     fn lab_3_3() {
         let xs = vec![-5.0, -3.0, -1.0, 1.0, 3.0, 5.0];
@@ -440,6 +447,7 @@ mod labs {
     }
 
     #[test]
+    #[cfg(feature = "plot_tests")]
     fn lab_3_4() {
         let x = 1.;
         let xs = vec![0.0, 0.5, 1.0, 1.5, 2.0];
@@ -666,7 +674,6 @@ mod labs {
         assert!(t_step / (x_step * x_step) < 1. / 2.);
 
         let mut solutions = Vec::with_capacity(5);
-        let mut colors = Vec::with_capacity(5);
         let explicit_robin = robin::pefd(
             phi0,
             1.,
@@ -720,13 +727,6 @@ mod labs {
         solutions.push(("IFDS Robin", implicit_robin));
         solutions.push(("CNS Robin", crank_nicolsons_robin));
 
-        colors.push(RED);
-        colors.push(BLUE);
-        colors.push(GREEN);
-        colors.push(TEAL);
-        colors.push(PURPLE);
-        colors.push(ORANGE);
-
         for (name, solution) in &solutions {
             for &t in &ts {
                 let idx = (t / t_step).round() as usize;
@@ -738,6 +738,8 @@ mod labs {
 
         #[cfg(feature = "plot_tests")]
         {
+            let colors = vec![RED, BLUE, GREEN, TEAL, PURPLE, ORANGE];
+
             let render_t_step = 0.05f64;
             let ts = (0..(max_t / render_t_step) as usize)
                 .map(|t| t as f64 * render_t_step)
@@ -803,10 +805,210 @@ mod labs {
 
     #[test]
     fn lab_6() {
-        let a = -2.;
-        let phi0 = |t: f64| -(a * t).sin();
-        let phi1 = |t: f64| (a * t).sin();
-        let psi = |x: f64| x.sin();
-        let dpsi_dt = |x: f64| -a * x.sin();
+        println!();
+        let alpha = 1.0;
+        let beta = 3.0;
+        let a = 1.0;
+        let b = 1.0;
+        let c = -1.0;
+        let d = |x: f64, t: f64| -x.cos() * (-t).exp();
+        let phi0 = |t: f64| (-t).exp();
+        let phi1 = |t: f64| -(-t).exp();
+        let psi1 = |x: f64| x.sin();
+        let psi2 = |x: f64| -x.sin();
+
+        let max_x = std::f64::consts::PI;
+        let max_t = 3.0;
+
+        let x_step_count = 100;
+        let t_step_count = 100000;
+
+        let analytical = |x: f64, t: f64| x.sin() * (-t).exp();
+
+        let ts = vec![max_t / 2., max_t];
+
+        let t_step = max_t / t_step_count as f64;
+        let x_step = max_x / x_step_count as f64;
+
+        assert!(a * t_step / (x_step * x_step) < 1.);
+
+        let mut solutions = Vec::with_capacity(2);
+        let explicit = dirichlet::pefd(
+            phi0,
+            phi1,
+            psi1,
+            psi2,
+            a,
+            b,
+            c,
+            d,
+            alpha,
+            beta,
+            t_step_count,
+            max_t,
+            x_step_count,
+            max_x,
+        );
+        let implicit = dirichlet::pifd(
+            phi0,
+            phi1,
+            psi1,
+            psi2,
+            a,
+            b,
+            c,
+            d,
+            alpha,
+            beta,
+            t_step_count,
+            max_t,
+            x_step_count,
+            max_x,
+        );
+
+        solutions.push(("EFDS", explicit));
+        solutions.push(("IFDS", implicit));
+
+        #[cfg(feature = "plot_tests")]
+        let mut l2_errors = Vec::new();
+
+        for (name, solution) in &solutions {
+            for &t in &ts {
+                let idx = (t / t_step).round() as usize;
+                let slice = &solution[idx];
+                let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
+                println!("{name} t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+            }
+
+            #[cfg(feature = "plot_tests")]
+            {
+                let errors: Vec<f64> = (0..=t_step_count)
+                    .map(|i| {
+                        let t = i as f64 * t_step;
+                        let slice = &solution[i];
+                        let (l2, _) = lab_5_get_err(x_step, t, slice, analytical);
+                        l2
+                    })
+                    .collect();
+                l2_errors.push((name, errors));
+            }
+        }
+
+        #[cfg(feature = "plot_tests")]
+        {
+            let colors = vec![RED, BLUE, GREEN, TEAL, PURPLE, ORANGE];
+            let l2_error_path = "plots/lab6_l2_error.png";
+            let root = BitMapBackend::new(l2_error_path, GRAPH_SIZE).into_drawing_area();
+            root.fill(&WHITE).unwrap();
+
+            let max_error = l2_errors
+                .iter()
+                .flat_map(|(_, errors)| errors.iter())
+                .fold(0.0f64, |a, &b| a.max(b));
+
+            let mut chart = ChartBuilder::on(&root)
+                .caption("Lab 6: L2 error over time", ("sans-serif", 24))
+                .margin(40)
+                .x_label_area_size(30)
+                .y_label_area_size(30)
+                .set_left_and_bottom_label_area_size(20)
+                .build_cartesian_2d(
+                    0.0 - max_t * 0.1..max_t * 1.1,
+                    0.0 - max_error * 0.1..max_error * 1.1,
+                )
+                .unwrap();
+
+            chart.configure_mesh().draw().unwrap();
+
+            for ((name, errors), color) in l2_errors.iter().zip(&colors) {
+                chart
+                    .draw_series(LineSeries::new(
+                        errors
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &err)| (i as f64 * t_step, err)),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label(format!("{}", name))
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                    });
+            }
+            chart
+                .configure_series_labels()
+                .background_style(&WHITE.mix(0.8))
+                .border_style(&BLACK)
+                .draw()
+                .unwrap();
+            root.present().unwrap();
+            open_plot(l2_error_path);
+
+            let render_t_step = 0.05f64;
+            let ts = (0..(max_t / render_t_step) as usize)
+                .map(|t| t as f64 * render_t_step)
+                .collect::<Vec<_>>();
+            let path = "plots/lab6.gif";
+            let root = BitMapBackend::gif(path, GRAPH_SIZE, (5_000f64 * render_t_step) as u32)
+                .unwrap()
+                .into_drawing_area();
+            root.fill(&WHITE).unwrap();
+
+            for t in ts {
+                let idx = (t / t_step).round() as usize;
+
+                root.fill(&WHITE).unwrap();
+                let mut chart = ChartBuilder::on(&root)
+                    .caption(
+                        format!("lab 6: finite-difference schemes, t={t:.3}"),
+                        ("sans-serif", 24),
+                    )
+                    .margin(10)
+                    .x_label_area_size(30)
+                    .y_label_area_size(30)
+                    .set_left_and_bottom_label_area_size(20)
+                    .build_cartesian_2d(-0.25f64..max_x + 0.25, -0.25f64..1.0f64)
+                    .unwrap();
+
+                chart.configure_mesh().draw().unwrap();
+
+                let color = RGBColor(100, 100, 100);
+                chart
+                    .draw_series(LineSeries::new(
+                        (0..=(max_x * 10_000.) as usize)
+                            .map(|j| j as f64 / 10_000.)
+                            .map(|x| (x, analytical(x, t))),
+                        &color,
+                    ))
+                    .unwrap()
+                    .label("Analytical")
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                    });
+
+                for ((name, solution), color) in solutions.iter().zip(&colors) {
+                    let slice = &solution[idx];
+                    chart
+                        .draw_series(LineSeries::new(
+                            (0..slice.len()).map(|j| (j as f64 * x_step, slice[j])),
+                            &color,
+                        ))
+                        .unwrap()
+                        .label(name.to_string())
+                        .legend(move |(x, y)| {
+                            PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                        });
+                }
+                chart
+                    .configure_series_labels()
+                    .background_style(&WHITE.mix(0.8))
+                    .border_style(&BLACK)
+                    .draw()
+                    .unwrap();
+                root.present().unwrap();
+            }
+
+            open_plot(path);
+        }
     }
 }

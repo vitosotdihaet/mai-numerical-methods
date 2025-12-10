@@ -292,251 +292,447 @@ pub mod differential {
         out
     }
 
-    pub mod robin {
-        use num::Float;
+    pub mod parabolic {
 
-        use crate::matrix::Matrix;
+        pub mod robin {
+            use num::Float;
 
-        pub fn pefd<T, F1, F2, F3>(
-            phi0: F1,
-            alpha: T,
-            beta: T,
-            phi1: F2,
-            gamma: T,
-            delta: T,
-            psi: F3,
-            a: T,
-            b: T,
-            c: T,
-            t_step_count: usize,
-            max_t: T,
-            x_step_count: usize,
-            max_x: T,
-        ) -> Vec<Vec<T>>
-        where
-            T: Float,
-            F1: Fn(T) -> T,
-            F2: Fn(T) -> T,
-            F3: Fn(T) -> T,
-        {
-            let zero = T::zero();
+            use crate::matrix::Matrix;
 
-            let x_step = max_x / T::from(x_step_count).unwrap();
-            let t_step = max_t / T::from(t_step_count).unwrap();
+            pub fn pefd<T, F1, F2, F3>(
+                phi0: F1,
+                alpha: T,
+                beta: T,
+                phi1: F2,
+                gamma: T,
+                delta: T,
+                psi: F3,
+                a: T,
+                b: T,
+                c: T,
+                t_step_count: usize,
+                max_t: T,
+                x_step_count: usize,
+                max_x: T,
+            ) -> Vec<Vec<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+            {
+                let zero = T::zero();
 
-            let nx = x_step_count + 1;
-            let nt = t_step_count + 1;
-            let mut xs = vec![zero; nx];
-            for (i, x) in xs.iter_mut().enumerate() {
-                *x = x_step * T::from(i).unwrap();
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
+
+                // grid: u[t][x]
+                let mut u = vec![vec![zero; nx]; nt];
+
+                // u(x,0) = psi(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][j] = psi(*x);
+                }
+
+                for k in 0..(nt - 1) {
+                    let t_next = ts[k + 1];
+
+                    for j in 1..(nx - 1) {
+                        u[k + 1][j] = u[k][j]
+                            + a * t_step * (u[k][j + 1] - u[k][j] - u[k][j] + u[k][j - 1])
+                                / (x_step * x_step)
+                            + b * t_step * (u[k][j + 1] - u[k][j - 1]) / (x_step + x_step)
+                            + c * t_step * u[k][j];
+                    }
+
+                    u[k + 1][0] = (x_step * phi0(t_next) - u[k + 1][1]) / (beta * x_step - alpha);
+                    u[k + 1][nx - 1] =
+                        (x_step * phi1(t_next) + u[k + 1][nx - 2]) / (delta * x_step + gamma);
+                }
+
+                u
             }
-            let mut ts = vec![zero; nt];
-            for (i, t) in ts.iter_mut().enumerate() {
-                *t = t_step * T::from(i).unwrap();
+
+            pub fn pifd<T, F1, F2, F3>(
+                phi0: F1,
+                alpha: T,
+                beta: T,
+                phi1: F2,
+                gamma: T,
+                delta: T,
+                psi: F3,
+                a: T,
+                b: T,
+                c: T,
+                t_step_count: usize,
+                max_t: T,
+                x_step_count: usize,
+                max_x: T,
+            ) -> Vec<Vec<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
+
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
+
+                // grid: u[t][x]
+                let mut u = vec![vec![zero; nx]; 1];
+
+                // u(x,0) = psi(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][j] = psi(*x);
+                }
+
+                let aj = -a * t_step / (x_step * x_step) + b * t_step / (x_step + x_step);
+                let bj = (two * a * t_step) / (x_step * x_step) - c * t_step + one;
+                let cj = -a * t_step / (x_step * x_step) - b * t_step / (x_step + x_step);
+
+                for k in 0..(nt - 1) {
+                    let t_next = ts[k + 1];
+
+                    let mut m = Matrix::with_capacity(nx);
+                    let mut d = Matrix::column(&u[k]);
+
+                    d[0][0] = phi0(t_next);
+                    let mut row = vec![zero; nx];
+                    row[0] = beta - alpha / x_step;
+                    row[1] = alpha / x_step;
+                    m.push(row);
+
+                    for j in 1..(nx - 1) {
+                        let mut row = vec![zero; nx];
+                        row[j - 1] = aj;
+                        row[j] = bj;
+                        row[j + 1] = cj;
+                        m.push(row);
+                    }
+
+                    d[nx - 1][0] = phi1(t_next);
+                    let mut row = vec![zero; nx];
+                    row[nx - 2] = -gamma / x_step;
+                    row[nx - 1] = delta + gamma / x_step;
+                    m.push(row);
+
+                    u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                }
+
+                u
             }
 
-            // grid: u[t][x]
-            let mut u = vec![vec![zero; nx]; nt];
+            pub fn crank_nicolsons<T, F1, F2, F3>(
+                phi0: F1,
+                alpha: T,
+                beta: T,
+                phi1: F2,
+                gamma: T,
+                delta: T,
+                psi: F3,
+                a: T,
+                b: T,
+                c: T,
+                t_step_count: usize,
+                max_t: T,
+                x_step_count: usize,
+                max_x: T,
+            ) -> Vec<Vec<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
 
-            // u(x,0) = psi(x)
-            for (j, x) in xs.iter().enumerate() {
-                u[0][j] = psi(*x);
-            }
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
 
-            for k in 0..(nt - 1) {
-                let t_next = ts[k + 1];
+                let nx = x_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
 
-                for j in 1..(nx - 1) {
-                    u[k + 1][j] = u[k][j]
-                        + a * t_step * (u[k][j + 1] - u[k][j] - u[k][j] + u[k][j - 1])
+                // grid: u[t][x]
+                let mut u = vec![vec![zero; nx]; 1];
+
+                // u(x,0) = psi(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][j] = psi(*x);
+                }
+
+                let aj = (-a * t_step / (x_step * x_step) + b * t_step / (x_step + x_step)) / two;
+                let bj = ((two * a * t_step) / (x_step * x_step) - c * t_step) / two + one;
+                let cj = (-a * t_step / (x_step * x_step) - b * t_step / (x_step + x_step)) / two;
+
+                for k in 0..(nt - 1) {
+                    let t_next = ts[k + 1];
+
+                    let mut m = Matrix::with_capacity(nx);
+                    let mut d = Matrix::column(&u[k]);
+
+                    for j in 1..(nx - 1) {
+                        d[j][0] = (a * t_step * (u[k][j + 1] - u[k][j] - u[k][j] + u[k][j - 1])
                             / (x_step * x_step)
-                        + b * t_step * (u[k][j + 1] - u[k][j - 1]) / (x_step + x_step)
-                        + c * t_step * u[k][j];
-                }
+                            + b * t_step * (u[k][j + 1] - u[k][j - 1]) / (x_step + x_step)
+                            + c * t_step * u[k][j])
+                            / two
+                            + u[k][j];
+                    }
 
-                u[k + 1][0] = (x_step * phi0(t_next) - u[k + 1][1]) / (beta * x_step - alpha);
-                u[k + 1][nx - 1] =
-                    (x_step * phi1(t_next) + u[k + 1][nx - 2]) / (delta * x_step + gamma);
-            }
-
-            u
-        }
-
-        pub fn pifd<T, F1, F2, F3>(
-            phi0: F1,
-            alpha: T,
-            beta: T,
-            phi1: F2,
-            gamma: T,
-            delta: T,
-            psi: F3,
-            a: T,
-            b: T,
-            c: T,
-            t_step_count: usize,
-            max_t: T,
-            x_step_count: usize,
-            max_x: T,
-        ) -> Vec<Vec<T>>
-        where
-            T: Float,
-            F1: Fn(T) -> T,
-            F2: Fn(T) -> T,
-            F3: Fn(T) -> T,
-        {
-            let zero = T::zero();
-            let one = T::one();
-            let two = T::from(2.0).unwrap();
-
-            let x_step = max_x / T::from(x_step_count).unwrap();
-            let t_step = max_t / T::from(t_step_count).unwrap();
-
-            let nx = x_step_count + 1;
-            let nt = t_step_count + 1;
-            let mut xs = vec![zero; nx];
-            for (i, x) in xs.iter_mut().enumerate() {
-                *x = x_step * T::from(i).unwrap();
-            }
-            let mut ts = vec![zero; nt];
-            for (i, t) in ts.iter_mut().enumerate() {
-                *t = t_step * T::from(i).unwrap();
-            }
-
-            // grid: u[t][x]
-            let mut u = vec![vec![zero; nx]; 1];
-
-            // u(x,0) = psi(x)
-            for (j, x) in xs.iter().enumerate() {
-                u[0][j] = psi(*x);
-            }
-
-            let aj = -a * t_step / (x_step * x_step) + b * t_step / (x_step + x_step);
-            let bj = (two * a * t_step) / (x_step * x_step) - c * t_step + one;
-            let cj = -a * t_step / (x_step * x_step) - b * t_step / (x_step + x_step);
-
-            for k in 0..(nt - 1) {
-                let t_next = ts[k + 1];
-
-                let mut m = Matrix::with_capacity(nx);
-                let mut d = Matrix::column(&u[k]);
-
-                d[0][0] = phi0(t_next);
-                let mut row = vec![zero; nx];
-                row[0] = beta - alpha / x_step;
-                row[1] = alpha / x_step;
-                m.push(row);
-
-                for j in 1..(nx - 1) {
+                    d[0][0] = phi0(t_next);
                     let mut row = vec![zero; nx];
-                    row[j - 1] = aj;
-                    row[j] = bj;
-                    row[j + 1] = cj;
+                    row[0] = beta - alpha / x_step;
+                    row[1] = alpha / x_step;
                     m.push(row);
-                }
 
-                d[nx - 1][0] = phi1(t_next);
-                let mut row = vec![zero; nx];
-                row[nx - 2] = -gamma / x_step;
-                row[nx - 1] = delta + gamma / x_step;
-                m.push(row);
+                    for j in 1..(nx - 1) {
+                        let mut row = vec![zero; nx];
+                        row[j - 1] = aj;
+                        row[j] = bj;
+                        row[j + 1] = cj;
+                        m.push(row);
+                    }
 
-                u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
-            }
-
-            u
-        }
-
-        pub fn crank_nicolsons<T, F1, F2, F3>(
-            phi0: F1,
-            alpha: T,
-            beta: T,
-            phi1: F2,
-            gamma: T,
-            delta: T,
-            psi: F3,
-            a: T,
-            b: T,
-            c: T,
-            t_step_count: usize,
-            max_t: T,
-            x_step_count: usize,
-            max_x: T,
-        ) -> Vec<Vec<T>>
-        where
-            T: Float,
-            F1: Fn(T) -> T,
-            F2: Fn(T) -> T,
-            F3: Fn(T) -> T,
-        {
-            let zero = T::zero();
-            let one = T::one();
-            let two = T::from(2.0).unwrap();
-
-            let x_step = max_x / T::from(x_step_count).unwrap();
-            let t_step = max_t / T::from(t_step_count).unwrap();
-
-            let nx = x_step_count + 1;
-            let nt = t_step_count + 1;
-            let mut xs = vec![zero; nx];
-            for (i, x) in xs.iter_mut().enumerate() {
-                *x = x_step * T::from(i).unwrap();
-            }
-            let mut ts = vec![zero; nt];
-            for (i, t) in ts.iter_mut().enumerate() {
-                *t = t_step * T::from(i).unwrap();
-            }
-
-            // grid: u[t][x]
-            let mut u = vec![vec![zero; nx]; 1];
-
-            // u(x,0) = psi(x)
-            for (j, x) in xs.iter().enumerate() {
-                u[0][j] = psi(*x);
-            }
-
-            let aj = (-a * t_step / (x_step * x_step) + b * t_step / (x_step + x_step)) / two;
-            let bj = ((two * a * t_step) / (x_step * x_step) - c * t_step) / two + one;
-            let cj = (-a * t_step / (x_step * x_step) - b * t_step / (x_step + x_step)) / two;
-
-            for k in 0..(nt - 1) {
-                let t_next = ts[k + 1];
-
-                let mut m = Matrix::with_capacity(nx);
-                let mut d = Matrix::column(&u[k]);
-
-                for j in 1..(nx - 1) {
-                    d[j][0] = (a * t_step * (u[k][j + 1] - u[k][j] - u[k][j] + u[k][j - 1])
-                        / (x_step * x_step)
-                        + b * t_step * (u[k][j + 1] - u[k][j - 1]) / (x_step + x_step)
-                        + c * t_step * u[k][j])
-                        / two
-                        + u[k][j];
-                }
-
-                d[0][0] = phi0(t_next);
-                let mut row = vec![zero; nx];
-                row[0] = beta - alpha / x_step;
-                row[1] = alpha / x_step;
-                m.push(row);
-
-                for j in 1..(nx - 1) {
+                    d[nx - 1][0] = phi1(t_next);
                     let mut row = vec![zero; nx];
-                    row[j - 1] = aj;
-                    row[j] = bj;
-                    row[j + 1] = cj;
+                    row[nx - 2] = -gamma / x_step;
+                    row[nx - 1] = delta + gamma / x_step;
                     m.push(row);
+
+                    u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
                 }
 
-                d[nx - 1][0] = phi1(t_next);
-                let mut row = vec![zero; nx];
-                row[nx - 2] = -gamma / x_step;
-                row[nx - 1] = delta + gamma / x_step;
-                m.push(row);
+                u
+            }
+        }
+    }
 
-                u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+    pub mod hyperbolic {
+        pub mod dirichlet {
+            use num::Float;
+
+            use crate::matrix::Matrix;
+
+            pub fn pefd<T, F1, F2, F3, F4, F5>(
+                phi0: F1,
+                phi1: F2,
+                psi1: F3,
+                psi2: F4,
+                a: T,
+                b: T,
+                c: T,
+                d: F5,
+                alpha: T,
+                beta: T,
+                t_step_count: usize,
+                max_t: T,
+                x_step_count: usize,
+                max_x: T,
+            ) -> Vec<Vec<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+                F4: Fn(T) -> T,
+                F5: Fn(T, T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
+
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
+
+                // grid: u[t][x]
+                let mut u = vec![vec![zero; nx]; nt];
+
+                // u(x,t_0) = psi(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][j] = psi1(*x);
+                }
+
+                // u(x,t_1) = psi(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[1][j] = psi1(*x) + t_step * psi2(*x);
+                }
+
+                let u_kp1_jp1_arg = (t_step * t_step / alpha / x_step) * (a / x_step + b / two);
+                let u_kp1_j_arg = two
+                    + (t_step / alpha) * (-beta - two * a * t_step / x_step / x_step + c * t_step);
+                let u_kp1_jm1_arg = (t_step * t_step / alpha / x_step) * (a / x_step - b / two);
+                let u_k_j_arg = beta * t_step / alpha - one;
+                let free_arg = |x: T, t: T| d(x, t) * t_step * t_step / alpha;
+
+                for k in 0..(nt - 2) {
+                    let t = ts[k + 2];
+
+                    for j in 1..(nx - 1) {
+                        let x = xs[j];
+                        u[k + 2][j] = u[k + 1][j + 1] * u_kp1_jp1_arg
+                            + u[k + 1][j] * u_kp1_j_arg
+                            + u[k + 1][j - 1] * u_kp1_jm1_arg
+                            + u[k][j] * u_k_j_arg
+                            + free_arg(x, t);
+                    }
+
+                    u[k + 2][0] = -x_step * phi0(t) + u[k + 2][1];
+                    u[k + 2][nx - 1] = x_step * phi1(t) + u[k + 2][nx - 2];
+                }
+
+                u
             }
 
-            u
+            pub fn pifd<T, F1, F2, F3, F4, F5>(
+                phi0: F1,
+                phi1: F2,
+                psi1: F3,
+                psi2: F4,
+                a: T,
+                b: T,
+                c: T,
+                d: F5,
+                alpha: T,
+                beta: T,
+                t_step_count: usize,
+                max_t: T,
+                x_step_count: usize,
+                max_x: T,
+            ) -> Vec<Vec<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+                F4: Fn(T) -> T,
+                F5: Fn(T, T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
+
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
+
+                // grid: u[t][x]
+                let mut u = vec![vec![zero; nx]; 2];
+
+                // u(x,t_0) = psi1(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][j] = psi1(*x);
+                }
+
+                // u(x,t_1)
+                for (j, x) in xs.iter().enumerate() {
+                    u[1][j] = psi1(*x) + t_step * psi2(*x);
+                }
+
+                // left side
+                let u_k_j_arg = -two - beta * t_step / alpha;
+                let u_km1_j_arg = one;
+                let free_arg = |x: T, t: T| -d(x, t) * t_step * t_step / alpha;
+
+                // right side
+                let u_kp1_jp1_arg = a * t_step * t_step / alpha / x_step / x_step
+                    + b * t_step * t_step / alpha / two / x_step;
+                let u_kp1_j_arg = -two * a * t_step * t_step / alpha / x_step / x_step
+                    - beta * t_step / alpha
+                    + c * t_step * t_step / alpha
+                    - one;
+                let u_kp1_jm1_arg = a * t_step * t_step / alpha / x_step / x_step
+                    - b * t_step * t_step / alpha / two / x_step;
+
+                for k in 0..(nt - 2) {
+                    let t = ts[k + 2];
+
+                    let mut m = Matrix::with_capacity(nx);
+                    let mut d = Matrix::zero(nx, 1);
+
+                    d[0][0] = phi0(t);
+                    let mut row = vec![zero; nx];
+                    row[0] = -one / x_step;
+                    row[1] = one / x_step;
+                    m.push(row);
+
+                    for j in 1..(nx - 1) {
+                        let x = xs[j];
+                        let mut row = vec![zero; nx];
+                        row[j - 1] = u_kp1_jm1_arg;
+                        row[j] = u_kp1_j_arg;
+                        row[j + 1] = u_kp1_jp1_arg;
+                        d[j][0] = u_km1_j_arg * u[k][j] + u_k_j_arg * u[k + 1][j] + free_arg(x, t);
+                        m.push(row);
+                    }
+
+                    d[nx - 1][0] = phi1(t);
+                    let mut row = vec![zero; nx];
+                    row[nx - 2] = -one / x_step;
+                    row[nx - 1] = one / x_step;
+                    m.push(row);
+
+                    u.push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                }
+
+                u
+            }
         }
     }
 }
