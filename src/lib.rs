@@ -164,7 +164,8 @@ mod labs {
     use crate::{
         equation::{
             differential::{
-                adams_method, eulers_method, hyperbolic::dirichlet, parabolic::robin, runge_kutta,
+                adams_method, elliptic, eulers_method, hyperbolic::dirichlet, parabolic::robin,
+                runge_kutta,
             },
             halves_method, iterations_method, newtons_method, systems,
         },
@@ -1008,6 +1009,288 @@ mod labs {
                 root.present().unwrap();
             }
 
+            open_plot(path);
+        }
+    }
+
+    fn lab_7_get_err<T>(
+        x_step: T,
+        y_step: T,
+        solution: &Matrix<T>,
+        analytical: impl Fn(T, T) -> T,
+    ) -> (T, T)
+    where
+        T: num::Float,
+    {
+        let ny = solution.len();
+        let nx = solution[0].len();
+        let mut l2 = T::zero();
+        let mut max_err = T::zero();
+        for i in 0..ny {
+            let y = T::from(i).unwrap() * y_step;
+            for j in 0..nx {
+                let x = T::from(j).unwrap() * x_step;
+
+                let numerical = solution[i][j];
+                let exact = analytical(x, y);
+
+                let diff = (numerical - exact).abs();
+                l2 = l2 + diff * diff;
+                if diff > max_err {
+                    max_err = diff;
+                }
+            }
+        }
+        l2 = (l2 / T::from(nx).unwrap()).sqrt();
+        (l2, max_err)
+    }
+
+    #[test]
+    fn lab_7() {
+        #[cfg(feature = "plot_tests")]
+        const DRAW_ITERS: usize = 50;
+        println!();
+        let alpha = 1.0;
+        let beta = 1.0;
+        let a = -2.0;
+        let b = -2.0;
+        let c = 4.0;
+        let phi0 = |y: f64| (-y).exp() * y.cos();
+        let phi1 = |_y: f64| 0.;
+        let psi0 = |x: f64| (-x).exp() * x.cos();
+        let psi1 = |_x: f64| 0.;
+
+        let x_step_count = 100;
+        let y_step_count = 100;
+
+        let max_x = std::f64::consts::PI / 2.;
+        let max_y = std::f64::consts::PI / 2.;
+        let eps = 1e-9;
+        let relax_slope = 4.;
+        let relax_amount = 1e4;
+        let max_iter = 1000;
+        let max_iter_seidel = 1000;
+
+        let analytical = |x: f64, y: f64| (-x - y).exp() * x.cos() * y.cos();
+
+        let iter_solution = elliptic::dirichlet::iterative_method(
+            phi0,
+            phi1,
+            psi0,
+            psi1,
+            a,
+            b,
+            c,
+            alpha,
+            beta,
+            x_step_count,
+            max_x,
+            y_step_count,
+            max_y,
+            eps,
+            max_iter,
+            relax_slope,
+            relax_amount,
+        );
+
+        let seidel_solution = elliptic::dirichlet::seidel(
+            phi0,
+            phi1,
+            psi0,
+            psi1,
+            a,
+            b,
+            c,
+            alpha,
+            beta,
+            x_step_count,
+            max_x,
+            y_step_count,
+            max_y,
+            eps,
+            max_iter_seidel,
+            relax_slope,
+            relax_amount,
+        );
+
+        let solutions = vec![("Iterative", iter_solution), ("Seidel's", seidel_solution)];
+
+        let x_step = max_x / x_step_count as f64;
+        let y_step = max_y / y_step_count as f64;
+
+        for (name, solution) in &solutions {
+            let (l2, max_err) = lab_7_get_err(x_step, y_step, solution, analytical);
+            println!("{name}: l2 error = {l2}, max error = {max_err}");
+        }
+
+        #[cfg(feature = "plot_tests")]
+        {
+            use crate::{GRAPH_HEIGHT, GRAPH_WIDTH};
+            let graph_width: u32 = GRAPH_WIDTH;
+            let graph_height: u32 = GRAPH_HEIGHT * 2;
+            let path = "plots/lab7.gif";
+
+            let root = BitMapBackend::gif(path, (graph_width, graph_height), 60)
+                .unwrap()
+                .into_drawing_area();
+
+            let errors: Vec<_> = solutions
+                .iter()
+                .map(|(_, s)| {
+                    let mut max_error = std::f64::NEG_INFINITY;
+                    let mut min_error = std::f64::INFINITY;
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let x = xi as f64 * max_x / (x_step_count - 1) as f64;
+                            let y = yi as f64 * max_y / (y_step_count - 1) as f64;
+                            let error = s[yi][xi] - analytical(x, y);
+                            if error > max_error {
+                                max_error = error;
+                            }
+                            if error < min_error {
+                                min_error = error;
+                            }
+                        }
+                    }
+                    (min_error, max_error)
+                })
+                .collect();
+
+            let f_analytical = |x: f64, y: f64| analytical(x, y);
+
+            let x_points = (0..=50).map(|i| i as f64 * max_x / 50.0);
+            let y_points = (0..=50).map(|i| i as f64 * max_y / 50.0);
+
+            for pitch in 0..DRAW_ITERS {
+                if (pitch + 1) % 10 == 0 {
+                    println!("drawn at iter = {}", pitch + 1);
+                }
+                root.fill(&WHITE).unwrap();
+
+                let (subplot_analytical, mut subplot_solutions) =
+                    root.split_vertically(graph_height / (1 + solutions.len()) as u32);
+
+                let analytical_min = 0.;
+                let analytical_max = 1.;
+                let mut chart_analytical = ChartBuilder::on(&subplot_analytical)
+                    .caption("Analytical Solution", ("sans-serif", 20))
+                    .build_cartesian_3d(0.0..max_x, analytical_min..analytical_max, 0.0..max_y)
+                    .unwrap();
+
+                chart_analytical.with_projection(|mut p| {
+                    p.pitch = (pitch as f64 / 10.0).sin() / 3. + 0.333;
+                    p.scale = 0.7;
+                    p.yaw = pitch as f64 / 20.;
+                    p.into_matrix()
+                });
+
+                chart_analytical.configure_axes().draw().unwrap();
+
+                chart_analytical
+                    .draw_series(
+                        SurfaceSeries::xoz(x_points.clone(), y_points.clone(), f_analytical)
+                            .style_func(&|&v| {
+                                let c = VulcanoHSL::get_color(v / 5.0);
+                                RGBAColor(c.rgb().0, c.rgb().1, c.rgb().2, 0.5).into()
+                            }),
+                    )
+                    .unwrap();
+
+                for (i, (name, solution)) in solutions.iter().enumerate() {
+                    let current_subplot = if i == solutions.len() - 1 {
+                        subplot_solutions.clone()
+                    } else {
+                        let (upper, lower) = subplot_solutions
+                            .split_vertically(graph_height / (1 + solutions.len()) as u32);
+                        subplot_solutions = lower;
+                        upper
+                    };
+
+                    let areas = current_subplot.split_evenly((1, 2));
+
+                    let f = |x: f64, y: f64| {
+                        let xi = ((x / max_x) * (x_step_count - 1) as f64).round() as usize;
+                        let yi = ((y / max_y) * (y_step_count - 1) as f64).round() as usize;
+                        solution[yi][xi]
+                    };
+                    let f_error = |x: f64, y: f64| {
+                        let xi = ((x / max_x) * (x_step_count - 1) as f64).round() as usize;
+                        let yi = ((y / max_y) * (y_step_count - 1) as f64).round() as usize;
+                        solution[yi][xi] - analytical(x, y)
+                    };
+                    let (min_num, max_num) = (
+                        solution
+                            .iter()
+                            .flatten()
+                            .fold(f64::INFINITY, |a, &b| a.min(b)),
+                        solution
+                            .iter()
+                            .flatten()
+                            .fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
+                    );
+                    let (min_err, max_err) = errors[i];
+
+                    let mut chart_solution = ChartBuilder::on(&areas[0])
+                        .caption(format!("Numerical Solution: {name}"), ("sans-serif", 20))
+                        .build_cartesian_3d(0.0..max_x, min_num..max_num, 0.0..max_y)
+                        .unwrap();
+
+                    chart_solution.with_projection(|mut p| {
+                        p.pitch = (pitch as f64 / 10.0).sin() / 3. + 0.333;
+                        p.scale = 0.7;
+                        p.yaw = pitch as f64 / 20.;
+                        p.into_matrix()
+                    });
+
+                    chart_solution.configure_axes().draw().unwrap();
+
+                    chart_solution
+                        .draw_series(
+                            SurfaceSeries::xoz(x_points.clone(), y_points.clone(), f).style_func(
+                                &|&v| {
+                                    let c = VulcanoHSL::get_color(v / 5.0);
+                                    RGBAColor(c.rgb().0, c.rgb().1, c.rgb().2, 0.5).into()
+                                },
+                            ),
+                        )
+                        .unwrap();
+
+                    let mut chart_error = ChartBuilder::on(&areas[1])
+                        .caption(
+                            format!("Error (max = {:.2e})", min_err.abs().max(max_err)),
+                            ("sans-serif", 20),
+                        )
+                        .build_cartesian_3d(0.0..max_x, min_err..max_err, 0.0..max_y)
+                        .unwrap();
+
+                    chart_error.with_projection(|mut p| {
+                        p.pitch = (pitch as f64 / 10.0).sin() / 3. + 0.333;
+                        p.scale = 0.7;
+                        p.yaw = pitch as f64 / 20.;
+                        p.into_matrix()
+                    });
+
+                    chart_error.configure_axes().draw().unwrap();
+
+                    let x_points = (0..=100).map(|i| i as f64 * max_x / 100.0);
+                    let y_points = (0..=100).map(|i| i as f64 * max_y / 100.0);
+
+                    chart_error
+                        .draw_series(
+                            SurfaceSeries::xoz(x_points.clone(), y_points.clone(), f_error)
+                                .style_func(&|&v| {
+                                    let normalized = (v - min_err) / (max_err - min_err);
+                                    let c = VulcanoHSL::get_color(normalized);
+                                    RGBAColor(c.rgb().0, c.rgb().1, c.rgb().2, 0.5).into()
+                                }),
+                        )
+                        .unwrap();
+                }
+
+                root.present().unwrap();
+            }
+
+            root.present().unwrap();
             open_plot(path);
         }
     }
