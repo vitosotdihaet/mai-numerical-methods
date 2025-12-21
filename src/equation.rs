@@ -791,7 +791,7 @@ pub mod differential {
                     *y = y_step * T::from(i).unwrap();
                 }
 
-                // grid: u[k][y][x]
+                // grid: u[y][x]
                 let mut u = Matrix::zero(ny, nx);
 
                 // u(x, 0) = psi1(x)
@@ -936,7 +936,7 @@ pub mod differential {
                     *y = y_step * T::from(i).unwrap();
                 }
 
-                // grid: u[k][y][x]
+                // grid: u[y][x]
                 let mut u = Matrix::zero(ny, nx);
 
                 // u(x, 0) = psi1(x)
@@ -1008,6 +1008,192 @@ pub mod differential {
                     {
                         break;
                     }
+                }
+
+                u
+            }
+        }
+    }
+
+    pub mod two_dimensional {
+        pub mod parabolic {
+            use num::Float;
+
+            use crate::matrix::Matrix;
+
+            pub fn variable_direction_method<T, F1, F2, F3, F4, F5, FF>(
+                phi0: F1,
+                phi1: F2,
+                psi0: F3,
+                psi1: F4,
+                khi: F5,
+                a: T,
+                b: T,
+                f: FF,
+                x_step_count: usize,
+                max_x: T,
+                y_step_count: usize,
+                max_y: T,
+                t_step_count: usize,
+                max_t: T,
+            ) -> Vec<Matrix<T>>
+            where
+                T: Float,
+                F1: Fn(T, T) -> T,
+                F2: Fn(T, T) -> T,
+                F3: Fn(T, T) -> T,
+                F4: Fn(T, T) -> T,
+                F5: Fn(T, T) -> T,
+                FF: Fn(T, T, T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
+
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let y_step = max_y / T::from(y_step_count).unwrap();
+                let t_step = max_t / T::from(t_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let ny = y_step_count + 1;
+                let nt = t_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ys = vec![zero; ny];
+                for (i, y) in ys.iter_mut().enumerate() {
+                    *y = y_step * T::from(i).unwrap();
+                }
+                let mut ts = vec![zero; nt];
+                for (i, t) in ts.iter_mut().enumerate() {
+                    *t = t_step * T::from(i).unwrap();
+                }
+
+                let mut u = Vec::with_capacity(nt);
+                u.push(Matrix::zero(ny, nx));
+
+                for (i, y) in ys.iter().enumerate() {
+                    for (j, x) in xs.iter().enumerate() {
+                        u[0][i][j] = khi(*x, *y);
+                    }
+                }
+
+                // temporal layer k + 1/2: explicit scheme for y
+                let u_khalf_im1_j_arg = -b / y_step / y_step;
+                let u_khalf_i_j_arg = two * b / y_step / y_step + two / t_step;
+                let u_khalf_ip1_j_arg = -b / y_step / y_step;
+
+                // temporal layer k + 1: explicit scheme for x;
+                let u_kn_i_jm1_arg = -a / x_step / x_step;
+                let u_kn_i_j_arg = two * a / x_step / x_step + two / t_step;
+                let u_kn_i_jp1_arg = -a / x_step / x_step;
+
+                // temporal layer k + 1: explicit scheme for x
+                for k in 0..(nt - 1) {
+                    // temporal layer k + 1/2: explicit scheme for y
+                    // tl[j][i] = u^{k+1/2}_{ij}
+                    let mut first_temporal_layer = Matrix::with_capacity(nx);
+                    let t_half = (ts[k + 1] + ts[k]) / two;
+
+                    // u_kn_i_0 = phi0(y, t)
+                    let mut first_row = vec![zero; ny];
+                    for (i, &y) in ys.iter().enumerate() {
+                        first_row[i] = phi0(y, t_half);
+                    }
+                    first_temporal_layer.push(first_row);
+
+                    for j in 1..(nx - 1) {
+                        let x = xs[j];
+                        let mut m = Matrix::with_capacity(ny);
+                        let mut d = Matrix::zero(ny, 1);
+
+                        d[0][0] = psi0(x, t_half);
+                        let mut row = vec![zero; ny];
+                        row[0] = one;
+                        m.push(row);
+
+                        for i in 1..(ny - 1) {
+                            d[i][0] = two * u[k][i][j] / t_step
+                                + a / x_step / x_step
+                                    * (u[k][i][j + 1] - two * u[k][i][j] + u[k][i][j - 1])
+                                + f(x, ys[i], t_half);
+                            let mut row = vec![zero; ny];
+                            row[i - 1] = u_khalf_im1_j_arg;
+                            row[i] = u_khalf_i_j_arg;
+                            row[i + 1] = u_khalf_ip1_j_arg;
+                            m.push(row);
+                        }
+
+                        d[ny - 1][0] = psi1(x, t_half);
+                        let mut row = vec![zero; ny];
+                        row[ny - 2] = -one / y_step;
+                        row[ny - 1] = one / y_step;
+                        m.push(row);
+
+                        first_temporal_layer
+                            .push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                    }
+
+                    // (u_kn_i_J - u_kn_i_Jm1)/x_step = phi1(y, t)
+                    let mut last_row = vec![zero; ny];
+                    for (i, &y) in ys.iter().enumerate() {
+                        last_row[i] = phi1(y, t_half) * x_step + first_temporal_layer[nx - 2][i];
+                    }
+                    first_temporal_layer.push(last_row);
+
+                    // temporal layer k + 1: explicit scheme for x;
+                    // tl[i][j] = u^{k + 1}_{ij}
+                    let mut second_temporal_layer = Matrix::with_capacity(ny);
+                    let t_next = ts[k + 1];
+
+                    let mut first_row = vec![zero; nx];
+                    for (j, &x) in xs.iter().enumerate() {
+                        first_row[j] = psi0(x, t_next);
+                    }
+                    second_temporal_layer.push(first_row);
+
+                    for i in 1..(ny - 1) {
+                        let y = ys[i];
+                        let mut m = Matrix::with_capacity(nx);
+                        let mut d = Matrix::zero(nx, 1);
+
+                        d[0][0] = phi0(y, t_next);
+                        let mut row = vec![zero; nx];
+                        row[0] = one;
+                        m.push(row);
+
+                        for j in 1..(nx - 1) {
+                            d[j][0] = two * first_temporal_layer[j][i] / t_step
+                                + b / y_step / y_step
+                                    * (first_temporal_layer[j][i + 1]
+                                        - two * first_temporal_layer[j][i]
+                                        + first_temporal_layer[j][i - 1])
+                                + f(xs[j], y, t_next); // maybe previous t_next?
+                            let mut row = vec![zero; nx];
+                            row[j - 1] = u_kn_i_jm1_arg;
+                            row[j] = u_kn_i_j_arg;
+                            row[j + 1] = u_kn_i_jp1_arg;
+                            m.push(row);
+                        }
+
+                        d[nx - 1][0] = phi1(y, t_next);
+                        let mut row = vec![zero; nx];
+                        row[nx - 2] = -one / x_step;
+                        row[nx - 1] = one / x_step;
+                        m.push(row);
+
+                        second_temporal_layer
+                            .push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                    }
+
+                    let mut last_row = vec![zero; nx];
+                    for (j, &x) in xs.iter().enumerate() {
+                        last_row[j] = psi1(x, t_next) * y_step + second_temporal_layer[ny - 2][j];
+                    }
+                    second_temporal_layer.push(last_row);
+
+                    u.push(second_temporal_layer);
                 }
 
                 u

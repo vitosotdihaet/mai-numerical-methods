@@ -239,7 +239,7 @@ where
             }
 
             if i == 0 {
-                assert!(c[i] != T::zero());
+                assert!(b[i] != T::zero());
             }
 
             if i > 0 && i < n - 1 {
