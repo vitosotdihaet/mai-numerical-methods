@@ -1079,29 +1079,27 @@ pub mod differential {
                     }
                 }
 
-                // temporal layer k + 1/2: explicit scheme for y
+                // temporal layer k + 1/2: implicit scheme for y
                 let u_khalf_im1_j_arg = -b / y_step / y_step;
                 let u_khalf_i_j_arg = two * b / y_step / y_step + two / t_step;
                 let u_khalf_ip1_j_arg = -b / y_step / y_step;
 
-                // temporal layer k + 1: explicit scheme for x;
+                // temporal layer k + 1: implicit scheme for x
                 let u_kn_i_jm1_arg = -a / x_step / x_step;
                 let u_kn_i_j_arg = two * a / x_step / x_step + two / t_step;
                 let u_kn_i_jp1_arg = -a / x_step / x_step;
 
-                // temporal layer k + 1: explicit scheme for x
+                // temporal layer k + 1: implicit scheme for x
                 for k in 0..(nt - 1) {
-                    // temporal layer k + 1/2: explicit scheme for y
-                    // tl[j][i] = u^{k+1/2}_{ij}
-                    let mut first_temporal_layer = Matrix::with_capacity(nx);
+                    // temporal layer k + 1/2: implicit scheme for y
+                    // tl[i][j] = u^{k+1/2}_{ij}
+                    let mut first_temporal_layer = Matrix::zero(ny, nx);
                     let t_half = (ts[k + 1] + ts[k]) / two;
 
                     // u_kn_i_0 = phi0(y, t)
-                    let mut first_row = vec![zero; ny];
                     for (i, &y) in ys.iter().enumerate() {
-                        first_row[i] = phi0(y, t_half);
+                        first_temporal_layer[i][0] = phi0(y, t_half);
                     }
-                    first_temporal_layer.push(first_row);
 
                     for j in 1..(nx - 1) {
                         let x = xs[j];
@@ -1131,18 +1129,18 @@ pub mod differential {
                         row[ny - 1] = one / y_step;
                         m.push(row);
 
-                        first_temporal_layer
-                            .push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                        let result = m.solve_tridiagonal(&d);
+                        for i in 0..ny {
+                            first_temporal_layer[i][j] = result[i][0];
+                        }
                     }
 
-                    // (u_kn_i_J - u_kn_i_Jm1)/x_step = phi1(y, t)
-                    let mut last_row = vec![zero; ny];
                     for (i, &y) in ys.iter().enumerate() {
-                        last_row[i] = phi1(y, t_half) * x_step + first_temporal_layer[nx - 2][i];
+                        first_temporal_layer[i][nx - 1] =
+                            phi1(y, t_half) * x_step + first_temporal_layer[nx - 2][i];
                     }
-                    first_temporal_layer.push(last_row);
 
-                    // temporal layer k + 1: explicit scheme for x;
+                    // temporal layer k + 1: implicit scheme for x
                     // tl[i][j] = u^{k + 1}_{ij}
                     let mut second_temporal_layer = Matrix::with_capacity(ny);
                     let t_next = ts[k + 1];
@@ -1164,11 +1162,11 @@ pub mod differential {
                         m.push(row);
 
                         for j in 1..(nx - 1) {
-                            d[j][0] = two * first_temporal_layer[j][i] / t_step
+                            d[j][0] = two * first_temporal_layer[i][j] / t_step
                                 + b / y_step / y_step
-                                    * (first_temporal_layer[j][i + 1]
-                                        - two * first_temporal_layer[j][i]
-                                        + first_temporal_layer[j][i - 1])
+                                    * (first_temporal_layer[i + 1][j]
+                                        - two * first_temporal_layer[i][j]
+                                        + first_temporal_layer[i - 1][j])
                                 + f(xs[j], y, t_next);
                             let mut row = vec![zero; nx];
                             row[j - 1] = u_kn_i_jm1_arg;
@@ -1183,8 +1181,7 @@ pub mod differential {
                         row[nx - 1] = one / x_step;
                         m.push(row);
 
-                        second_temporal_layer
-                            .push(m.solve_tridiagonal(&d).transposed().swap_remove(0));
+                        second_temporal_layer.push(m.solve_tridiagonal(&d).transposed().remove(0));
                     }
 
                     let mut last_row = vec![zero; nx];

@@ -1301,7 +1301,7 @@ mod labs {
     #[test]
     fn lab_8() {
         #[cfg(feature = "plot_tests")]
-        const DRAW_ITERS: usize = 400;
+        const DRAW_ITERS: usize = 40;
         println!();
         struct TestSuite {
             a: f64,
@@ -1313,9 +1313,9 @@ mod labs {
         let max_y = std::f64::consts::PI;
         let max_t = std::f64::consts::PI;
 
-        let x_step_count = 150;
-        let y_step_count = 150;
-        let t_step_count = 800;
+        let x_step_count = 50;
+        let y_step_count = 50;
+        let t_step_count = 100;
 
         let test_suite = vec![TestSuite {
             a: 1.,
@@ -1424,7 +1424,7 @@ mod labs {
                     let t = iter as f64 / DRAW_ITERS as f64 * max_t;
                     let num_iter = ((t / max_t) * (t_step_count as f64)) as usize;
 
-                    let analytical_min = 0.;
+                    let analytical_min = -0.9;
                     let analytical_max = 0.9;
                     let f_analytical = |x: f64, y: f64| analytical(x, y, t);
                     let (subplot_analytical, mut subplot_solutions) =
@@ -1468,8 +1468,8 @@ mod labs {
 
                         let mut max_error = std::f64::NEG_INFINITY;
                         let mut min_error = std::f64::INFINITY;
-                        let mut plot_min_error: f64 = -2.5e-2;
-                        let mut plot_max_error: f64 = 2.5e-2;
+                        let mut plot_min_error: f64 = -2.1e-2;
+                        let mut plot_max_error: f64 = 2.1e-2;
                         let min_num = analytical_min;
                         let max_num = analytical_max;
                         for yi in 0..y_step_count {
@@ -1546,7 +1546,7 @@ mod labs {
                                     .style_func(&|&v| {
                                         let c =
                                         plotters::style::colors::colormaps::ViridisRGBA::get_color(
-                                            (v - plot_min_error) / (plot_max_error + plot_min_error),
+                                            1.0 - (v - plot_min_error) / (plot_max_error - plot_min_error),
                                         );
                                         RGBAColor(c.rgb().0, c.rgb().1, c.rgb().2, 0.3).into()
                                     }),
