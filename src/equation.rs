@@ -743,9 +743,6 @@ pub mod differential {
 
             use crate::matrix::Matrix;
 
-            /// # Parameters
-            /// `relax_slope`: how steep does the exponent grow - the bigger the value, the steeper the curve
-            /// `relax_amount`: eps multiplication factor at iteration №`max_iter`. set to 1 if you don't want relaxation
             pub fn iterative_method<T, F1, F2, F3, F4>(
                 phi0: F1,
                 phi1: F2,
@@ -762,9 +759,7 @@ pub mod differential {
                 max_y: T,
                 eps: T,
                 max_iter: usize,
-                relax_slope: T,
-                relax_amount: T,
-            ) -> Matrix<T>
+            ) -> Vec<Matrix<T>>
             where
                 T: Float,
                 F1: Fn(T) -> T,
@@ -773,9 +768,7 @@ pub mod differential {
                 F4: Fn(T) -> T,
             {
                 let zero = T::zero();
-                let one = T::one();
                 let two = T::from(2.0).unwrap();
-                let max_iter_t = T::from(max_iter).unwrap();
 
                 let x_step = max_x / T::from(x_step_count).unwrap();
                 let y_step = max_y / T::from(y_step_count).unwrap();
@@ -792,36 +785,36 @@ pub mod differential {
                 }
 
                 // grid: u[y][x]
-                let mut u = Matrix::zero(ny, nx);
+                let mut u = vec![Matrix::zero(ny, nx)];
 
                 // u(x, 0) = psi1(x)
                 for (j, x) in xs.iter().enumerate() {
-                    u[0][j] = psi0(*x);
+                    u[0][0][j] = psi0(*x);
                 }
 
                 // u(x, l2) = psi2(x)
                 for (j, x) in xs.iter().enumerate() {
-                    u[ny - 1][j] = psi1(*x);
+                    u[0][ny - 1][j] = psi1(*x);
                 }
 
                 // u(0, y) = phi1(x)
                 for (i, y) in ys.iter().enumerate() {
-                    u[i][0] = phi0(*y);
+                    u[0][i][0] = phi0(*y);
                 }
 
                 // u(l1, y) = phi2(x)
                 for (i, y) in ys.iter().enumerate() {
-                    u[i][nx - 1] = phi1(*y);
+                    u[0][i][nx - 1] = phi1(*y);
                 }
 
                 for i in 1..(ny - 1) {
                     for j in 1..(nx - 1) {
-                        let left = u[i][0];
-                        let right = u[i][nx - 1];
-                        let bottom = u[0][j];
-                        let top = u[ny - 1][j];
+                        let left = u[0][i][0];
+                        let right = u[0][i][nx - 1];
+                        let bottom = u[0][0][j];
+                        let top = u[0][ny - 1][j];
 
-                        u[i][j] = (left
+                        u[0][i][j] = (left
                             + (right - left) * T::from(j).unwrap() / T::from(nx - 1).unwrap()
                             + bottom
                             + (top - bottom) * T::from(i).unwrap() / T::from(ny - 1).unwrap())
@@ -837,7 +830,7 @@ pub mod differential {
                 let u_ip1j_m_u_im1j_arg = b / two / y_step / u_kp1_i_j_arg;
 
                 for k in 0..max_iter {
-                    let mut new_layer = u.clone();
+                    let mut new_layer = Matrix::like(&u[k]);
 
                     // u(x, 0) = psi1(x)
                     for (j, x) in xs.iter().enumerate() {
@@ -860,30 +853,163 @@ pub mod differential {
                     }
 
                     let mut max_diff = T::zero();
+                    let cu = &u[k];
                     for i in 1..(ny - 1) {
                         for j in 1..(nx - 1) {
-                            new_layer[i][j] = u_ijp1_p_u_ijm1_arg * (u[i][j + 1] + u[i][j - 1])
-                                + u_ip1j_p_u_im1j_arg * (u[i + 1][j] + u[i - 1][j])
-                                + u_ijp1_m_u_ijm1_arg * (u[i][j + 1] - u[i][j - 1])
-                                + u_ip1j_m_u_im1j_arg * (u[i + 1][j] - u[i - 1][j]);
-                            let diff = (new_layer[i][j] - u[i][j]).abs();
+                            new_layer[i][j] = u_ijp1_p_u_ijm1_arg * (cu[i][j + 1] + cu[i][j - 1])
+                                + u_ip1j_p_u_im1j_arg * (cu[i + 1][j] + cu[i - 1][j])
+                                + u_ijp1_m_u_ijm1_arg * (cu[i][j + 1] - cu[i][j - 1])
+                                + u_ip1j_m_u_im1j_arg * (cu[i + 1][j] - cu[i - 1][j]);
+                            let diff = (new_layer[i][j] - cu[i][j]).abs();
                             if diff > max_diff {
                                 max_diff = diff;
                             }
                         }
                     }
 
-                    u = new_layer;
+                    u.push(new_layer);
 
                     // see https://www.desmos.com/calculator/dyveh5rhpi for the example
-                    if max_diff
-                        <= eps
-                            * (((((T::from(k).unwrap() / (max_iter_t - one) * relax_slope).exp()
-                                - one)
-                                / ((relax_slope).exp() - one))
-                                * relax_amount)
-                                + one)
-                    {
+                    if max_diff <= eps {
+                        break;
+                    }
+                }
+
+                u
+            }
+
+            pub fn relaxed_method<T, F1, F2, F3, F4>(
+                phi0: F1,
+                phi1: F2,
+                psi0: F3,
+                psi1: F4,
+                a: T,
+                b: T,
+                c: T,
+                alpha: T,
+                beta: T,
+                x_step_count: usize,
+                max_x: T,
+                y_step_count: usize,
+                max_y: T,
+                eps: T,
+                max_iter: usize,
+                relax_amount: T,
+            ) -> Vec<Matrix<T>>
+            where
+                T: Float,
+                F1: Fn(T) -> T,
+                F2: Fn(T) -> T,
+                F3: Fn(T) -> T,
+                F4: Fn(T) -> T,
+            {
+                let zero = T::zero();
+                let one = T::one();
+                let two = T::from(2.0).unwrap();
+
+                let x_step = max_x / T::from(x_step_count).unwrap();
+                let y_step = max_y / T::from(y_step_count).unwrap();
+
+                let nx = x_step_count + 1;
+                let ny = y_step_count + 1;
+                let mut xs = vec![zero; nx];
+                for (i, x) in xs.iter_mut().enumerate() {
+                    *x = x_step * T::from(i).unwrap();
+                }
+                let mut ys = vec![zero; ny];
+                for (i, y) in ys.iter_mut().enumerate() {
+                    *y = y_step * T::from(i).unwrap();
+                }
+
+                // grid: u[y][x]
+                let mut u = vec![Matrix::zero(ny, nx)];
+
+                // u(x, 0) = psi1(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][0][j] = psi0(*x);
+                }
+
+                // u(x, l2) = psi2(x)
+                for (j, x) in xs.iter().enumerate() {
+                    u[0][ny - 1][j] = psi1(*x);
+                }
+
+                // u(0, y) = phi1(x)
+                for (i, y) in ys.iter().enumerate() {
+                    u[0][i][0] = phi0(*y);
+                }
+
+                // u(l1, y) = phi2(x)
+                for (i, y) in ys.iter().enumerate() {
+                    u[0][i][nx - 1] = phi1(*y);
+                }
+
+                for i in 1..(ny - 1) {
+                    for j in 1..(nx - 1) {
+                        let left = u[0][i][0];
+                        let right = u[0][i][nx - 1];
+                        let bottom = u[0][0][j];
+                        let top = u[0][ny - 1][j];
+
+                        u[0][i][j] = (left
+                            + (right - left) * T::from(j).unwrap() / T::from(nx - 1).unwrap()
+                            + bottom
+                            + (top - bottom) * T::from(i).unwrap() / T::from(ny - 1).unwrap())
+                            / two;
+                    }
+                }
+
+                let u_kp1_i_j_arg =
+                    -two * alpha / x_step / x_step - two * beta / y_step / y_step + c;
+                let u_ijp1_p_u_ijm1_arg = -alpha / x_step / x_step / u_kp1_i_j_arg;
+                let u_ip1j_p_u_im1j_arg = -beta / y_step / y_step / u_kp1_i_j_arg;
+                let u_ijp1_m_u_ijm1_arg = a / two / x_step / u_kp1_i_j_arg;
+                let u_ip1j_m_u_im1j_arg = b / two / y_step / u_kp1_i_j_arg;
+
+                for k in 0..max_iter {
+                    let mut new_layer = Matrix::like(&u[k]);
+
+                    // u(x, 0) = psi1(x)
+                    for (j, x) in xs.iter().enumerate() {
+                        new_layer[0][j] = psi0(*x);
+                    }
+
+                    // u(x, l2) = psi2(x)
+                    for (j, x) in xs.iter().enumerate() {
+                        new_layer[ny - 1][j] = psi1(*x);
+                    }
+
+                    // u(0, y) = phi1(x)
+                    for (i, y) in ys.iter().enumerate() {
+                        new_layer[i][0] = phi0(*y);
+                    }
+
+                    // u(l1, y) = phi2(x)
+                    for (i, y) in ys.iter().enumerate() {
+                        new_layer[i][nx - 1] = phi1(*y);
+                    }
+
+                    let mut max_diff = T::zero();
+                    let cu = &u[k];
+                    for i in 1..(ny - 1) {
+                        for j in 1..(nx - 1) {
+                            new_layer[i][j] = cu[i][j] * relax_amount
+                                + (one - relax_amount)
+                                    * (u_ijp1_p_u_ijm1_arg * (cu[i][j + 1] + cu[i][j - 1])
+                                        + u_ip1j_p_u_im1j_arg * (cu[i + 1][j] + cu[i - 1][j])
+                                        + u_ijp1_m_u_ijm1_arg * (cu[i][j + 1] - cu[i][j - 1])
+                                        + u_ip1j_m_u_im1j_arg * (cu[i + 1][j] - cu[i - 1][j]));
+                            let diff = (new_layer[i][j] - cu[i][j]).abs();
+                            if diff > max_diff {
+                                max_diff = diff;
+                            }
+                        }
+                    }
+
+                    u.push(new_layer);
+
+                    // see https://www.desmos.com/calculator/dyveh5rhpi for the example
+                    if max_diff <= eps {
                         break;
                     }
                 }
@@ -907,9 +1033,7 @@ pub mod differential {
                 max_y: T,
                 eps: T,
                 max_iter: usize,
-                relax_slope: T,
-                relax_amount: T,
-            ) -> Matrix<T>
+            ) -> Vec<Matrix<T>>
             where
                 T: Float,
                 F1: Fn(T) -> T,
@@ -918,9 +1042,7 @@ pub mod differential {
                 F4: Fn(T) -> T,
             {
                 let zero = T::zero();
-                let one = T::one();
                 let two = T::from(2.0).unwrap();
-                let max_iter_t = T::from(max_iter).unwrap();
 
                 let x_step = max_x / T::from(x_step_count).unwrap();
                 let y_step = max_y / T::from(y_step_count).unwrap();
@@ -937,36 +1059,36 @@ pub mod differential {
                 }
 
                 // grid: u[y][x]
-                let mut u = Matrix::zero(ny, nx);
+                let mut u = vec![Matrix::zero(ny, nx)];
 
                 // u(x, 0) = psi1(x)
                 for (j, x) in xs.iter().enumerate() {
-                    u[0][j] = psi0(*x);
+                    u[0][0][j] = psi0(*x);
                 }
 
                 // u(x, l2) = psi2(x)
                 for (j, x) in xs.iter().enumerate() {
-                    u[ny - 1][j] = psi1(*x);
+                    u[0][ny - 1][j] = psi1(*x);
                 }
 
                 // u(0, y) = phi1(x)
                 for (i, y) in ys.iter().enumerate() {
-                    u[i][0] = phi0(*y);
+                    u[0][i][0] = phi0(*y);
                 }
 
                 // u(l1, y) = phi2(x)
                 for (i, y) in ys.iter().enumerate() {
-                    u[i][nx - 1] = phi1(*y);
+                    u[0][i][nx - 1] = phi1(*y);
                 }
 
                 for i in 1..(ny - 1) {
                     for j in 1..(nx - 1) {
-                        let left = u[i][0];
-                        let right = u[i][nx - 1];
-                        let bottom = u[0][j];
-                        let top = u[ny - 1][j];
+                        let left = u[0][i][0];
+                        let right = u[0][i][nx - 1];
+                        let bottom = u[0][0][j];
+                        let top = u[0][ny - 1][j];
 
-                        u[i][j] = (left
+                        u[0][i][j] = (left
                             + (right - left) * T::from(j).unwrap() / T::from(nx - 1).unwrap()
                             + bottom
                             + (top - bottom) * T::from(i).unwrap() / T::from(ny - 1).unwrap())
@@ -983,29 +1105,27 @@ pub mod differential {
 
                 for k in 0..max_iter {
                     let mut max_diff = T::zero();
+                    let cu = &u[k];
+                    let mut new_layer = cu.clone();
                     for i in 1..(ny - 1) {
                         for j in 1..(nx - 1) {
-                            let prev = u[i][j];
-                            u[i][j] = u_ijp1_p_u_ijm1_arg * (u[i][j + 1] + u[i][j - 1])
-                                + u_ip1j_p_u_im1j_arg * (u[i + 1][j] + u[i - 1][j])
-                                + u_ijp1_m_u_ijm1_arg * (u[i][j + 1] - u[i][j - 1])
-                                + u_ip1j_m_u_im1j_arg * (u[i + 1][j] - u[i - 1][j]);
-                            let diff = (u[i][j] - prev).abs();
+                            let prev = cu[i][j];
+                            new_layer[i][j] = u_ijp1_p_u_ijm1_arg
+                                * (new_layer[i][j + 1] + new_layer[i][j - 1])
+                                + u_ip1j_p_u_im1j_arg * (new_layer[i + 1][j] + new_layer[i - 1][j])
+                                + u_ijp1_m_u_ijm1_arg * (new_layer[i][j + 1] - new_layer[i][j - 1])
+                                + u_ip1j_m_u_im1j_arg * (new_layer[i + 1][j] - new_layer[i - 1][j]);
+                            let diff = (new_layer[i][j] - prev).abs();
                             if diff > max_diff {
                                 max_diff = diff;
                             }
                         }
                     }
 
+                    u.push(new_layer);
+
                     // see https://www.desmos.com/calculator/dyveh5rhpi for the example
-                    if max_diff
-                        <= eps
-                            * (((((T::from(k).unwrap() / (max_iter_t - one) * relax_slope).exp()
-                                - one)
-                                / ((relax_slope).exp() - one))
-                                * relax_amount)
-                                + one)
-                    {
+                    if max_diff <= eps {
                         break;
                     }
                 }
@@ -1089,10 +1209,8 @@ pub mod differential {
                 let u_kn_i_j_arg = two * a / x_step / x_step + two / t_step;
                 let u_kn_i_jp1_arg = -a / x_step / x_step;
 
-                // temporal layer k + 1: implicit scheme for x
                 for k in 0..(nt - 1) {
                     // temporal layer k + 1/2: implicit scheme for y
-                    // tl[i][j] = u^{k+1/2}_{ij}
                     let mut first_temporal_layer = Matrix::zero(ny, nx);
                     let t_half = (ts[k + 1] + ts[k]) / two;
 
@@ -1137,11 +1255,10 @@ pub mod differential {
 
                     for (i, &y) in ys.iter().enumerate() {
                         first_temporal_layer[i][nx - 1] =
-                            phi1(y, t_half) * x_step + first_temporal_layer[nx - 2][i];
+                            phi1(y, t_half) * x_step + first_temporal_layer[i][nx - 2];
                     }
 
                     // temporal layer k + 1: implicit scheme for x
-                    // tl[i][j] = u^{k + 1}_{ij}
                     let mut second_temporal_layer = Matrix::with_capacity(ny);
                     let t_next = ts[k + 1];
 

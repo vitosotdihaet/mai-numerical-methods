@@ -661,8 +661,8 @@ mod labs {
         let max_x = std::f64::consts::PI;
         let max_t = 1.5_f64;
 
-        let x_step_count = 100;
-        let t_step_count = 100000;
+        let x_step_count = 25;
+        let t_step_count = 1000;
 
         let ts = vec![max_t / 2., max_t];
 
@@ -736,7 +736,7 @@ mod labs {
                 let idx = (t / t_step).round() as usize;
                 let slice = &solution[idx];
                 let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
-                println!("{name} t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+                println!("{name} t = {t:.3}: L2 error = {l2:.7}, max error = {max:.7}");
             }
         }
 
@@ -752,7 +752,6 @@ mod labs {
             let root = BitMapBackend::gif(path, GRAPH_SIZE, (5_000f64 * render_t_step) as u32)
                 .unwrap()
                 .into_drawing_area();
-            root.fill(&WHITE).unwrap();
 
             for t in ts {
                 let idx = (t / t_step).round() as usize;
@@ -804,6 +803,128 @@ mod labs {
             }
 
             open_plot(path);
+
+            use plotters::element::Circle;
+            use plotters::prelude::*;
+            use plotters::series::LineSeries;
+            use plotters::style::{BLACK, BLUE, GREEN, RED, WHITE};
+
+            let errors_path = "plots/lab5_error.png";
+            let root = BitMapBackend::new(errors_path, GRAPH_SIZE).into_drawing_area();
+
+            root.fill(&WHITE).unwrap();
+
+            let mut time_points = Vec::new();
+            let mut method_errors = Vec::new();
+
+            let sample_every = 10;
+            for t_idx in (0..=t_step_count).step_by(sample_every) {
+                let t = t_idx as f64 * t_step;
+                time_points.push(t);
+            }
+
+            for (name, solution) in &solutions {
+                let mut l2_errors = Vec::new();
+                let mut max_errors = Vec::new();
+
+                for &t in &time_points {
+                    let idx = (t / t_step).round() as usize;
+                    if idx < solution.len() {
+                        let slice = &solution[idx];
+                        let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
+                        l2_errors.push(l2);
+                        max_errors.push(max);
+                    }
+                }
+
+                method_errors.push((name, l2_errors, max_errors));
+            }
+
+            let colors = vec![RED, BLUE, GREEN, PURPLE, ORANGE];
+
+            let mut chart = ChartBuilder::on(&root)
+                .caption("lab 5: error evolution over time", ("sans-serif", 24))
+                .margin(10)
+                .x_label_area_size(30)
+                .y_label_area_size(50)
+                .set_left_and_bottom_label_area_size(50)
+                .build_cartesian_2d(
+                    0.0..max_t,
+                    0.0..method_errors
+                        .iter()
+                        .fold(std::f64::NEG_INFINITY, |p, (_n, _l2, max)| {
+                            let a = *max
+                                .iter()
+                                .reduce(|a: &f64, b: &f64| if *a > *b { a } else { b })
+                                .unwrap();
+                            if a > p {
+                                a
+                            } else {
+                                p
+                            }
+                        }),
+                )
+                .unwrap();
+
+            chart
+                .configure_mesh()
+                .x_desc("t")
+                .y_desc("Error")
+                .y_label_formatter(&|y| format!("{:.1e}", y))
+                .draw()
+                .unwrap();
+
+            for ((name, l2_errs, _), color) in method_errors.iter().zip(&colors) {
+                let points: Vec<(f64, f64)> = time_points
+                    .iter()
+                    .zip(l2_errs.iter())
+                    .map(|(&t, &err)| (t, err))
+                    .collect();
+
+                chart
+                    .draw_series(LineSeries::new(points, color.stroke_width(2)))
+                    .unwrap()
+                    .label(format!("{} (L2)", name))
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y), (x + 20, y)], color.stroke_width(2))
+                    });
+
+                chart
+                    .draw_series(
+                        time_points
+                            .iter()
+                            .zip(l2_errs.iter())
+                            .map(|(&t, &err)| Circle::new((t, err), 2, color.filled())),
+                    )
+                    .unwrap();
+            }
+
+            for ((name, _, max_errs), color) in method_errors.iter().zip(&colors) {
+                let points: Vec<(f64, f64)> = time_points
+                    .iter()
+                    .zip(max_errs.iter())
+                    .map(|(&t, &err)| (t, err))
+                    .collect();
+
+                chart
+                    .draw_series(LineSeries::new(points, color.mix(0.7)))
+                    .unwrap()
+                    .label(format!("{} (Max)", name))
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y), (x + 20, y)], color.mix(0.7).to_rgba())
+                    });
+            }
+
+            chart
+                .configure_series_labels()
+                .position(SeriesLabelPosition::UpperRight)
+                .border_style(BLACK.stroke_width(1))
+                .background_style(WHITE.mix(0.8))
+                .draw()
+                .unwrap();
+
+            root.present().unwrap();
+            open_plot(errors_path);
         }
     }
 
@@ -824,8 +945,8 @@ mod labs {
         let max_x = std::f64::consts::PI;
         let max_t = 3.0;
 
-        let x_step_count = 100;
-        let t_step_count = 100000;
+        let x_step_count = 25;
+        let t_step_count = 1000;
 
         let analytical = |x: f64, t: f64| x.sin() * (-t).exp();
 
@@ -874,44 +995,51 @@ mod labs {
         solutions.push(("IFDS", implicit));
 
         #[cfg(feature = "plot_tests")]
-        let mut l2_errors = Vec::new();
+        let mut errors = Vec::new();
 
         for (name, solution) in &solutions {
             for &t in &ts {
                 let idx = (t / t_step).round() as usize;
                 let slice = &solution[idx];
                 let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
-                println!("{name} t = {t:.3}: L2 error = {l2:.3}, max error = {max:.3}");
+                println!("{name} t = {t:.3}: L2 error = {l2:.7}, max error = {max:.7}");
             }
 
             #[cfg(feature = "plot_tests")]
             {
-                let errors: Vec<f64> = (0..=t_step_count)
+                let errs: Vec<(f64, f64)> = (0..=t_step_count)
                     .map(|i| {
                         let t = i as f64 * t_step;
                         let slice = &solution[i];
-                        let (l2, _) = lab_5_get_err(x_step, t, slice, analytical);
-                        l2
+                        let (l2, max) = lab_5_get_err(x_step, t, slice, analytical);
+                        (l2, max)
                     })
                     .collect();
-                l2_errors.push((name, errors));
+                errors.push((name, errs));
             }
         }
 
         #[cfg(feature = "plot_tests")]
         {
             let colors = vec![RED, BLUE, GREEN, TEAL, PURPLE, ORANGE];
-            let l2_error_path = "plots/lab6_l2_error.png";
+            let l2_error_path = "plots/lab6_error.png";
             let root = BitMapBackend::new(l2_error_path, GRAPH_SIZE).into_drawing_area();
             root.fill(&WHITE).unwrap();
 
-            let max_error = l2_errors
-                .iter()
-                .flat_map(|(_, errors)| errors.iter())
-                .fold(0.0f64, |a, &b| a.max(b));
+            let max_error = errors.iter().fold(std::f64::NEG_INFINITY, |p, (_n, errs)| {
+                let a = *errs
+                    .iter()
+                    .reduce(|a, b| if a.1 > b.1 { a } else { b })
+                    .unwrap();
+                if a.1 > p {
+                    a.1
+                } else {
+                    p
+                }
+            });
 
             let mut chart = ChartBuilder::on(&root)
-                .caption("Lab 6: L2 error over time", ("sans-serif", 24))
+                .caption("Lab 6: error evolution over time", ("sans-serif", 24))
                 .margin(40)
                 .x_label_area_size(30)
                 .y_label_area_size(30)
@@ -924,19 +1052,36 @@ mod labs {
 
             chart.configure_mesh().draw().unwrap();
 
-            for ((name, errors), color) in l2_errors.iter().zip(&colors) {
+            for ((name, errors), color) in errors.iter().zip(&colors) {
                 chart
                     .draw_series(LineSeries::new(
                         errors
                             .iter()
                             .enumerate()
-                            .map(|(i, &err)| (i as f64 * t_step, err)),
+                            .map(|(i, &(_, max))| (i as f64 * t_step, max)),
                         &color,
                     ))
                     .unwrap()
-                    .label(format!("{}", name))
+                    .label(format!("{} (Max)", name))
                     .legend(move |(x, y)| {
                         PathElement::new(vec![(x, y - 2), (x + 20, y + 2)], color)
+                    });
+
+                chart
+                    .draw_series(LineSeries::new(
+                        errors
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &(l2, _))| (i as f64 * t_step, l2)),
+                        color.mix(0.7).stroke_width(2),
+                    ))
+                    .unwrap()
+                    .label(format!("{} (L2)", name))
+                    .legend(move |(x, y)| {
+                        PathElement::new(
+                            vec![(x, y - 2), (x + 20, y + 2)],
+                            color.mix(0.7).stroke_width(2),
+                        )
                     });
             }
             chart
@@ -1044,7 +1189,7 @@ mod labs {
                 }
             }
         }
-        l2 = (l2 / T::from(nx).unwrap()).sqrt();
+        l2 = (l2 / T::from(nx * ny).unwrap()).sqrt();
         (l2, max_err)
     }
 
@@ -1063,20 +1208,17 @@ mod labs {
         let psi0 = |x: f64| (-x).exp() * x.cos();
         let psi1 = |_x: f64| 0.;
 
-        let x_step_count = 100;
-        let y_step_count = 100;
+        let x_step_count = 101;
+        let y_step_count = 101;
 
         let max_x = std::f64::consts::PI / 2.;
         let max_y = std::f64::consts::PI / 2.;
-        let eps = 1e-9;
-        let relax_slope = 4.;
-        let relax_amount = 1e4;
-        let max_iter = 1000;
-        let max_iter_seidel = 1000;
+        let eps = 2e-5;
+        let max_iter = 3000;
 
         let analytical = |x: f64, y: f64| (-x - y).exp() * x.cos() * y.cos();
 
-        let iter_solution = elliptic::dirichlet::iterative_method(
+        let mut iter_solution = elliptic::dirichlet::iterative_method(
             phi0,
             phi1,
             psi0,
@@ -1092,11 +1234,10 @@ mod labs {
             max_y,
             eps,
             max_iter,
-            relax_slope,
-            relax_amount,
         );
+        println!("iter did {} iterations", iter_solution.len() - 1);
 
-        let seidel_solution = elliptic::dirichlet::seidel(
+        let mut seidel_solution = elliptic::dirichlet::seidel(
             phi0,
             phi1,
             psi0,
@@ -1111,19 +1252,42 @@ mod labs {
             y_step_count,
             max_y,
             eps,
-            max_iter_seidel,
-            relax_slope,
-            relax_amount,
+            max_iter,
         );
+        println!("seidel did {} iterations", seidel_solution.len() - 1);
 
-        let solutions = vec![("Iterative", iter_solution), ("Seidel's", seidel_solution)];
+        let mut relax_solution = elliptic::dirichlet::relaxed_method(
+            phi0,
+            phi1,
+            psi0,
+            psi1,
+            a,
+            b,
+            c,
+            alpha,
+            beta,
+            x_step_count,
+            max_x,
+            y_step_count,
+            max_y,
+            eps,
+            max_iter,
+            0.75,
+        );
+        println!("relax did {} iterations", relax_solution.len() - 1);
+
+        let solutions = vec![
+            ("Iterative", iter_solution.pop().unwrap()),
+            ("Seidel's", seidel_solution.pop().unwrap()),
+            ("Relaxed", relax_solution.pop().unwrap()),
+        ];
 
         let x_step = max_x / x_step_count as f64;
         let y_step = max_y / y_step_count as f64;
 
         for (name, solution) in &solutions {
             let (l2, max_err) = lab_7_get_err(x_step, y_step, solution, analytical);
-            println!("{name}: l2 error = {l2}, max error = {max_err}");
+            println!("{name}: l2 error = {l2:.7}, max error = {max_err:.7}");
         }
 
         #[cfg(feature = "plot_tests")]
@@ -1293,15 +1457,314 @@ mod labs {
                 root.present().unwrap();
             }
 
-            root.present().unwrap();
             open_plot(path);
+
+            let error_plot_path = "plots/lab7_errors.png";
+            let root_error = BitMapBackend::new(error_plot_path, (GRAPH_WIDTH, GRAPH_HEIGHT * 2))
+                .into_drawing_area();
+
+            root_error.fill(&WHITE).unwrap();
+
+            let iter_errors: Vec<(f64, f64)> = iter_solution
+                .iter()
+                .map(|solution| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let x = xi as f64 * max_x / (x_step_count - 1) as f64;
+                            let y = yi as f64 * max_y / (y_step_count - 1) as f64;
+                            let error = (solution[yi][xi] - analytical(x, y)).abs();
+
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let seidel_errors: Vec<(f64, f64)> = seidel_solution
+                .iter()
+                .map(|solution| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let x = xi as f64 * max_x / (x_step_count - 1) as f64;
+                            let y = yi as f64 * max_y / (y_step_count - 1) as f64;
+                            let error = (solution[yi][xi] - analytical(x, y)).abs();
+
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let relax_errors: Vec<(f64, f64)> = relax_solution
+                .iter()
+                .map(|solution| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let x = xi as f64 * max_x / (x_step_count - 1) as f64;
+                            let y = yi as f64 * max_y / (y_step_count - 1) as f64;
+                            let error = (solution[yi][xi] - analytical(x, y)).abs();
+
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let iter_errors_between_iters: Vec<(f64, f64)> = iter_solution
+                .iter()
+                .zip(&iter_solution[1..])
+                .map(|(a, b)| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let error = (a[yi][xi] - b[yi][xi]).abs();
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let seidel_errors_between_iters: Vec<(f64, f64)> = seidel_solution
+                .iter()
+                .zip(&seidel_solution[1..])
+                .map(|(a, b)| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let error = (b[yi][xi] - a[yi][xi]).abs();
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let relax_errors_between_iters: Vec<(f64, f64)> = relax_solution
+                .iter()
+                .zip(&relax_solution[1..])
+                .map(|(a, b)| {
+                    let mut l2_sum = 0.0;
+                    let mut max_err = 0.0;
+
+                    for yi in 0..y_step_count {
+                        for xi in 0..x_step_count {
+                            let error = (b[yi][xi] - a[yi][xi]).abs();
+                            l2_sum += error * error;
+                            if error > max_err {
+                                max_err = error;
+                            }
+                        }
+                    }
+
+                    let l2_error = (l2_sum / (x_step_count * y_step_count) as f64).sqrt();
+                    (l2_error, max_err)
+                })
+                .collect();
+
+            let (iterations_error_area, max_area) = root_error.split_vertically(GRAPH_HEIGHT);
+
+            let max_iterations = iter_errors
+                .len()
+                .max(seidel_errors.len())
+                .max(relax_errors.len());
+            let x_max = max_iterations as f64;
+
+            let max_max_error = iter_errors
+                .iter()
+                .chain(seidel_errors.iter())
+                .chain(relax_errors.iter())
+                .map(|&(_, max)| max)
+                .fold(0.0, f64::max);
+
+            let mut max_chart = ChartBuilder::on(&iterations_error_area)
+                .caption(
+                    "lab 7: maximum error evolution over iterations",
+                    ("sans-serif", 20),
+                )
+                .margin(10)
+                .x_label_area_size(30)
+                .y_label_area_size(40)
+                .build_cartesian_2d(0.0..x_max, 0.0..max_max_error * 1.1)
+                .unwrap();
+
+            max_chart
+                .configure_mesh()
+                .x_desc("Iteration")
+                .y_desc("Max Error")
+                .draw()
+                .unwrap();
+
+            max_chart
+                .draw_series(LineSeries::new(
+                    iter_errors
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &RED,
+                ))
+                .unwrap()
+                .label("Iterative Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+            max_chart
+                .draw_series(LineSeries::new(
+                    seidel_errors
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &BLUE,
+                ))
+                .unwrap()
+                .label("Seidel Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+
+            max_chart
+                .draw_series(LineSeries::new(
+                    relax_errors
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &GREEN,
+                ))
+                .unwrap()
+                .label("Relax Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &GREEN));
+
+            max_chart
+                .configure_series_labels()
+                .background_style(&WHITE.mix(0.8))
+                .border_style(&BLACK)
+                .draw()
+                .unwrap();
+
+            let max_iter_error = iter_errors_between_iters
+                .iter()
+                .chain(seidel_errors_between_iters.iter())
+                .chain(relax_errors_between_iters.iter())
+                .map(|&(_, max)| max)
+                .fold(0.0, f64::max);
+
+            let mut iter_diff_chart = ChartBuilder::on(&max_area)
+                .caption("Between-step error", ("sans-serif", 20))
+                .margin(10)
+                .x_label_area_size(30)
+                .y_label_area_size(60)
+                .build_cartesian_2d(
+                    0.0..x_max,
+                    ((eps - eps * 0.1)..seidel_errors_between_iters[0].1 * 1.001).log_scale(),
+                )
+                .unwrap();
+
+            iter_diff_chart
+                .configure_mesh()
+                .x_desc("Iteration")
+                .y_desc("Between-step error")
+                .draw()
+                .unwrap();
+
+            iter_diff_chart
+                .draw_series(LineSeries::new(
+                    iter_errors_between_iters
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &RED,
+                ))
+                .unwrap()
+                .label("Iterative Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+            iter_diff_chart
+                .draw_series(LineSeries::new(
+                    seidel_errors_between_iters
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &BLUE,
+                ))
+                .unwrap()
+                .label("Seidel Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+
+            iter_diff_chart
+                .draw_series(LineSeries::new(
+                    relax_errors_between_iters
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(_, max))| (i as f64, max)),
+                    &GREEN,
+                ))
+                .unwrap()
+                .label("Relax Method")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &GREEN));
+
+            iter_diff_chart
+                .draw_series(LineSeries::new(
+                    (0..=1).map(|v| (v as f64 * x_max, eps)),
+                    &BLACK,
+                ))
+                .unwrap()
+                .label("EPS")
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+
+            iter_diff_chart
+                .configure_series_labels()
+                .background_style(&WHITE.mix(0.8))
+                .border_style(&BLACK)
+                .draw()
+                .unwrap();
+
+            root_error.present().unwrap();
+            open_plot(error_plot_path);
         }
     }
 
     #[test]
     fn lab_8() {
         #[cfg(feature = "plot_tests")]
-        const DRAW_ITERS: usize = 40;
+        const DRAW_ITERS: usize = 400;
         println!();
         struct TestSuite {
             a: f64,
@@ -1311,11 +1774,11 @@ mod labs {
 
         let max_x = std::f64::consts::PI;
         let max_y = std::f64::consts::PI;
-        let max_t = std::f64::consts::PI;
+        let max_t = std::f64::consts::PI * 2.;
 
-        let x_step_count = 50;
-        let y_step_count = 50;
-        let t_step_count = 100;
+        let x_step_count = 151;
+        let y_step_count = 151;
+        let t_step_count = 400;
 
         let test_suite = vec![TestSuite {
             a: 1.,
